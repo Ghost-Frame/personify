@@ -2,3 +2,5 @@ node_modules/
 target/
 .next/
 .envrc
+CLAUDE.md
+/AGENTS.md
