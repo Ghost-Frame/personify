@@ -86,7 +86,7 @@ Devtools work in the user's environment uses these specific tools and patterns.
 - Structured output: `--output json` flag for agent pipelines alongside human-readable default
 
 ### Skill authoring
-- skill-forge (Astro 6.x) for skill marketplace UI
+- Skill marketplace UI (Astro 6.x)
 - Markdown with YAML frontmatter for skill definitions
 - Structured dev workflow as exemplar: `--input`/`--output` JSON files, rusqlite for state persistence
 

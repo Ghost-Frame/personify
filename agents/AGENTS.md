@@ -228,6 +228,6 @@ Schubert, J. (2026). *Field Logic of State Navigation -- A Relational Architectu
 
 ### Agent-design references
 
-- Bot library: persona + growth + targeting + spontaneity patterns. Read the PERSONA.md and growth mechanics first.
-- Agent supervisor: action gate, activity fan-out, growth reflection, dreaming, instincts.
-- Memory system: persistent recall + supervisor for drift monitoring + workflow gating for coding tasks.
+- Your bot framework: persona, growth, targeting, and spontaneity patterns. Read the persona and growth mechanics first.
+- Your agent supervisor: action gates, activity fan-out, growth reflection, dreaming, instincts.
+- Your memory backend: persistent recall, supervisor integration, workflow gating for coding tasks.

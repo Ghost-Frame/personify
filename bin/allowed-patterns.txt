@@ -3,10 +3,6 @@
 # is suppressed and does not count as a leak.
 # Lines starting with # are comments. Blank lines are ignored.
 
-# "master" in git branch context (e.g., "master branch", "git master") is fine.
-# The scanner uses the case-sensitive pattern "Master's" and "MASTER_ID",
-# so lowercase "master" as a git term is not caught. No exception needed here.
-
 # Add project-specific exceptions below as you discover false positives.
 # Format: the exact substring that appears in the grep output (file:line:content).
 

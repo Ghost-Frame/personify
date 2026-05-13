@@ -208,5 +208,5 @@ Schubert, J. (2026). *SL-20 -- Safety-Layer Frequency Analysis.* https://doi.org
 - Rust `criterion` crate documentation. https://docs.rs/criterion/
 - Rust `wiremock` crate documentation. https://docs.rs/wiremock/
 - Playwright documentation. https://playwright.dev/
-- Structured dev workflow protocol: `~/.claude/reference/the structured dev workflow-protocol.md`
+- Structured dev workflow protocol: your team's structured dev workflow documentation
 - test-driven-development skill (in PATH)

@@ -217,6 +217,6 @@ Schubert, J. (2026). *SL-20 -- Safety-Layer Frequency Analysis.* https://doi.org
 
 - OWASP Top 10. https://owasp.org/www-project-top-ten/
 - Rust API Guidelines. https://rust-lang.github.io/api-guidelines/
-- Structured dev workflow protocol: `~/.claude/reference/the structured dev workflow-protocol.md`
+- Structured dev workflow protocol: your team's structured dev workflow documentation
 - requesting-code-review skill (in PATH)
 - receiving-code-review skill (in PATH)

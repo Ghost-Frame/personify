@@ -63,15 +63,17 @@ The knowledge system uses these patterns.
 
 ### Core Modules
 
+Example module structure for a memory system:
+
 - embeddings -- embedding pipeline, model loading, batch inference
-- vector -- LanceDB storage, indexing, ANN search
-- graph -- knowledge graph topology, PageRank scoring, traversal
+- vector -- vector storage, indexing, ANN search
+- graph -- knowledge graph topology, importance scoring, traversal
 - context -- context window management, relevance ranking
 - memory -- memory CRUD, consolidation, deduplication
 - intelligence -- reasoning over retrieved memories
 - grounding -- fact anchoring, contradiction resolution
 - brain -- high-level cognitive orchestration
-- cognitive -- metacognitive reflection, dreaming cycles 
+- cognitive -- metacognitive reflection, dreaming cycles
 
 ### Storage and Inference
 
@@ -95,7 +97,7 @@ The knowledge system uses these patterns.
 
 ### Schema
 
-- Versioned via embedded SQL files: schema_v1 through schema_v15 (current)
+- Versioned via embedded migration functions; schema version tracked in the codebase
 - Every new schema change increments the version number
 - Migration must be tested against the previous version's data
 

@@ -70,7 +70,7 @@ the user's deployment infrastructure uses these patterns.
 
 - Rootless Podman on the VPS (NOT Docker)
 - UID mapping (100000+), chown to mapped UID
-- Restart chat-proxy triggers library restart; library is READ-ONLY
+- Restart the proxy service triggers library restart; library is READ-ONLY
 - podman cp for file operations into containers
 
 ### Network

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 AGENTS_DIR="${HOME}/.claude/agents"
-ARCHETYPES_DIR="${HOME}/projects/archetypes"
+ARCHETYPES_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # archetype -> agent-name mapping
 declare -A MAPPING=(

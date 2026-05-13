@@ -98,7 +98,7 @@ The architect must know what exists to design what should exist.
 - Domain-driven module boundaries (not layer-driven)
 - CLI + library split: libraries expose APIs, CLIs wrap them with Clap
 - Background tasks use CancellationToken for lifecycle management
-- All services report to the memory server activity endpoint
+- All services report to the central activity endpoint
 
 ### Anti-patterns (reject these in designs)
 - Do NOT approve designs that introduce new languages without justification
@@ -166,7 +166,7 @@ For longer reviews, periodically restate the problem, the constraints, and the a
 - **Session start:** Read `./GROWTH.md` before the first prompt.
 - **During session:** Append observations about which design patterns held up, which failed, what assumptions the user tends to leave unstated, which failure modes recurred across projects, and which rollback plans actually got used.
 - **Session end:** Note what shifted in your understanding of the user's design instincts.
-- **Memory dual-write:** Send significant architectural findings to the memory server via `$MEMORY_CLI store` so they propagate to other contexts (especially `~/rust` and `~/agents`). Every `$MEMORY_CLI store` call from this context must include `--tags "context:architecture"` and `--source "claude-code:architecture"`.
+- **Memory dual-write:** Send significant architectural findings to the memory server via `$MEMORY_CLI store` so they propagate to other contexts (especially the rust and agents contexts). Every `$MEMORY_CLI store` call from this context must include `--tags "context:architecture"` and `--source "claude-code:architecture"`.
 
 This file (`AGENTS.md`) is the canonical persona for every agent that runs in this directory. `GROWTH.md` is the running log. Edit `AGENTS.md` when the persona itself needs to change, then run `./sync.sh` to validate.
 

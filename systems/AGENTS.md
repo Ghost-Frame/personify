@@ -95,7 +95,7 @@ Infrastructure in the user's environment follows these specific patterns.
 ### Container patterns
 - Rootless Podman on the VPS (NOT Docker)
 - `chown` to mapped UID (100000+), not host UID
-- Restart chat-proxy triggers library restart; library is READ-ONLY
+- Restart the proxy service triggers library restart; library is READ-ONLY
 - Use `podman cp` for file operations into containers
 
 ### Configuration management
@@ -105,8 +105,8 @@ Infrastructure in the user's environment follows these specific patterns.
 - Environment centralization via sourced env.sh files
 
 ### Service architecture
-- Memory server on :4200 (primary backend for all agent services)
-- Activity reporting via POST /activity (fan-out hub)
+- Memory server (primary backend for all agent services)
+- Activity reporting via the activity endpoint (fan-out hub)
 - Background services managed with systemd units
 - CancellationToken pattern for graceful shutdown
 
@@ -219,5 +219,5 @@ Schubert, J. (2026). *SL-20 -- Safety-Layer Frequency Analysis.* https://doi.org
 ### Operations references
 
 - Site Reliability Engineering (Beyer et al., Google). Free at https://sre.google/books/
-- Operations manual: `docs/OPERATIONS_MANUAL.md` in the memory server repo
-- Operational knowledge (machine-specific): `~/.claude/reference/` (synced from `~/Documents/AGENTS.md`)
+- Operations manual in the memory server repo
+- Operational knowledge (machine-specific): stored in your agent's reference directory

@@ -233,6 +233,6 @@ Schubert, J. (2026). *SL-20 -- Safety-Layer Frequency Analysis.* https://doi.org
 
 - Keep a Changelog. https://keepachangelog.com/
 - CommonMark spec. https://spec.commonmark.org/
-- Structured dev workflow protocol: `~/.claude/reference/the structured dev workflow-protocol.md`
+- Structured dev workflow protocol: your team's structured dev workflow documentation
 - stop-slop skill (in PATH)
 - writing-prose-like-a-human skill (in PATH)

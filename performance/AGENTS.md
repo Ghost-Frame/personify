@@ -219,5 +219,5 @@ Schubert, J. (2026). *SL-20 -- Safety-Layer Frequency Analysis.* https://doi.org
 - cargo-flamegraph. https://github.com/flamegraph-rs/flamegraph
 - tokio-console. https://github.com/tokio-rs/console
 - Lighthouse documentation. https://developer.chrome.com/docs/lighthouse/
-- Structured dev workflow protocol: `~/.claude/reference/the structured dev workflow-protocol.md`
+- Structured dev workflow protocol: your team's structured dev workflow documentation
 - systematic-debugging skill (in PATH)

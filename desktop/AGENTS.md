@@ -63,7 +63,7 @@ the user's desktop and terminal infrastructure uses these patterns.
 
 ### Desktop Application Framework
 
-- Tauri 2.x + Svelte 5 for desktop apps (Forge)
+- Tauri 2.x + Svelte 5 for desktop apps
 - TypeScript + Svelte 5 for frontend layer
 - Rust for backend (Tauri commands, performance-critical code)
 - Hono 4.12 for Tauri webview backends
