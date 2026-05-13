@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/personify-pack"]
+members = [
+    "crates/personify-pack",
+    "crates/personify-vault",
+    "crates/personify-template",
+    "crates/personify-memory",
+]
 
 [workspace.package]
 edition = "2021"
@@ -11,6 +16,13 @@ license = "Apache-2.0"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
 thiserror = "2"
 unicode-normalization = "0.1"
+async-trait = "0.1"
+url = { version = "2", features = ["serde"] }
+secrecy = { version = "0.8", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"
