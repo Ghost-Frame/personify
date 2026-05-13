@@ -3,4 +3,6 @@ target/
 .next/
 .envrc
 CLAUDE.md
+GEMINI.md
 /AGENTS.md
+GROWTH.md

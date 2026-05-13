@@ -82,8 +82,8 @@ is_allowed() {
 # ---------------------------------------------------------------------------
 cd "$REPO_ROOT"
 
-# Collect tracked files
-mapfile -t TRACKED_FILES < <(git ls-files)
+# Collect tracked files, excluding the scanner and its allowlist (they contain pattern strings by definition)
+mapfile -t TRACKED_FILES < <(git ls-files | grep -vE '^bin/(verify-no-leaks\.sh|allowed-patterns\.txt)$')
 
 if [[ ${#TRACKED_FILES[@]} -eq 0 ]]; then
   echo "No tracked files found." >&2
