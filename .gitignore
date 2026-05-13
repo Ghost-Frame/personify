@@ -1,0 +1,17 @@
+# Private config
+.persona/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+GROWTH.md
+
+# Build
+/target/
+**/*.rs.bk
+.forge/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

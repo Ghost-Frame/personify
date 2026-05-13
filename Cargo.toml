@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["crates/personify-pack"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"
+unicode-normalization = "0.1"
