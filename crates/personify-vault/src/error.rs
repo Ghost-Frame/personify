@@ -49,4 +49,8 @@ pub enum VaultError {
         /// The name of the empty field.
         field: &'static str,
     },
+
+    /// A cryptographic operation (encrypt/decrypt) failed.
+    #[error("vault crypto error: {0}")]
+    Crypto(#[source] Box<dyn std::error::Error + Send + Sync>),
 }

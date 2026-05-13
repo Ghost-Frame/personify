@@ -3,8 +3,11 @@ resolver = "2"
 members = [
     "crates/personify-pack",
     "crates/personify-vault",
+    "crates/personify-vault-local",
     "crates/personify-template",
     "crates/personify-memory",
+    "crates/personify-memory-http",
+    "crates/personify-memory-sqlite-fts",
 ]
 
 [workspace.package]
@@ -26,3 +29,6 @@ secrecy = { version = "0.8", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tempfile = "3"
+zeroize = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+deadpool-sqlite = { version = "0.8", features = ["rt_tokio_1"] }

@@ -46,4 +46,11 @@ pub enum MemoryError {
     /// distinguish the failure; fall back to this only for truly opaque errors.
     #[error("backend error: {0}")]
     Backend(String),
+
+    /// The adapter was supplied an invalid or unusable configuration.
+    ///
+    /// Returned during construction when a required config value is missing,
+    /// out of range, or refers to a path that cannot be created.
+    #[error("configuration error: {0}")]
+    Configuration(String),
 }
