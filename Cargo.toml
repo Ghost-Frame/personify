@@ -9,6 +9,11 @@ members = [
     "crates/personify-memory-http",
     "crates/personify-memory-sqlite-fts",
     "crates/personify-runtime",
+    "crates/personify-catalog",
+    "crates/personify-catalog-postgres",
+    "crates/personify-objects",
+    "crates/personify-objects-fs",
+    "crates/personify-server",
 ]
 
 [workspace.package]
@@ -33,3 +38,20 @@ tempfile = "3"
 zeroize = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 deadpool-sqlite = { version = "0.8", features = ["rt_tokio_1"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+base64 = "0.22"
+hex = "0.4"
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "compression-gzip", "request-id", "limit", "cors", "set-header"] }
+tokio = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+diesel = { version = "2.2", features = ["postgres", "chrono", "serde_json", "uuid"] }
+diesel-async = { version = "0.5", features = ["postgres", "bb8"] }
+diesel_migrations = { version = "2.2", features = ["postgres"] }
+bb8 = "0.8"
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres"] }
+figment = { version = "0.10", features = ["env", "toml"] }
+mimalloc = "0.1"
