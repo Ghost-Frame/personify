@@ -12,7 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 frameshift-catalog = { path = "../frameshift-catalog" }
+frameshift-catalog-postgres = { path = "../frameshift-catalog-postgres" }
 frameshift-objects = { path = "../frameshift-objects" }
+frameshift-objects-fs = { path = "../frameshift-objects-fs" }
 frameshift-runtime = { path = "../frameshift-runtime" }
 frameshift-memory = { path = "../frameshift-memory" }
 frameshift-pack = { path = "../frameshift-pack" }

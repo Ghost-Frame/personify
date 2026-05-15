@@ -1,0 +1,28 @@
+[package]
+name = "frameshift-seed"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "One-shot seeder: ingests persona directories into the catalog and object store"
+
+[[bin]]
+name = "frameshift-seed"
+path = "src/main.rs"
+
+[dependencies]
+frameshift-catalog = { path = "../frameshift-catalog" }
+frameshift-catalog-postgres = { path = "../frameshift-catalog-postgres" }
+frameshift-objects = { path = "../frameshift-objects" }
+frameshift-objects-fs = { path = "../frameshift-objects-fs" }
+frameshift-pack = { path = "../frameshift-pack" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+secrecy = { workspace = true }
+serde_json = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand_core = { version = "0.6", features = ["getrandom"] }
+unicode-normalization = { workspace = true }

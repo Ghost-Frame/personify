@@ -1202,6 +1202,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "frameshift-seed"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "ed25519-dalek",
+ "frameshift-catalog",
+ "frameshift-catalog-postgres",
+ "frameshift-objects",
+ "frameshift-objects-fs",
+ "frameshift-pack",
+ "rand_core 0.6.4",
+ "secrecy",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "frameshift-server"
 version = "0.1.0"
 dependencies = [
@@ -1211,8 +1232,10 @@ dependencies = [
  "chrono",
  "figment",
  "frameshift-catalog",
+ "frameshift-catalog-postgres",
  "frameshift-memory",
  "frameshift-objects",
+ "frameshift-objects-fs",
  "frameshift-pack",
  "frameshift-runtime",
  "hex",
