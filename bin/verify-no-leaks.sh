@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-no-leaks.sh -- Pre-push leak scan for the public custom-agents repo.
+# verify-no-leaks.sh -- Pre-push leak scan for the public personas repo (Ghost-Frame/personify).
 # Scans all git-tracked files for known sensitive patterns.
 # Exit 0 = clean. Exit 1 = findings detected.
 #

@@ -98,7 +98,7 @@ The frames reference a few tools by name. These are the ones we use; replace the
 | `$MEMORY_CLI store` | Persists findings to a searchable memory store | Your note system, a SQLite DB, a markdown file, or remove |
 | `the structured dev workflow` workflow (`spec_task`, `challenge_code`, etc.) | Structured development workflow with pre/post hooks | Your team's PR checklist, or remove and rely on L1 rules alone |
 | `cred get` / `cred exec` | Credential retrieval without hardcoding secrets | `pass`, `1password-cli`, `vault`, environment variables, or remove |
-| `~/projects/plans/` | Directory where design docs live outside project repos | Wherever your specs live |
+| `~/specs/` | Directory where design docs live outside project repos | Wherever your specs live |
 
 The **Growth Integration** section in each frame is optional. If you do not have a persistent memory store, you can still use `GROWTH.md` as a plain file. The frame reads it on session start and appends during the session. No external tooling required.
 
