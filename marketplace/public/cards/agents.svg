@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="560" viewBox="0 0 400 560">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0b10"/>
+      <stop offset="100%" stop-color="#12131a"/>
+    </linearGradient>
+    <!-- Radial accent gradient -->
+    <radialGradient id="radial" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#5ebaef" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0a0b10" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glow-strong" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Holographic diagonal line pattern -->
+    <pattern id="holo" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="8" x2="8" y2="0" stroke="#ffffff" stroke-width="0.5" opacity="0.5"/>
+    </pattern>
+    <!-- Border gradient -->
+    <linearGradient id="border-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5ebaef"/>
+      <stop offset="50%" stop-color="#5ebaef" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#5ebaef"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Card base -->
+  <rect width="400" height="560" rx="12" fill="url(#bg)"/>
+  <!-- Radial glow in center -->
+  <rect width="400" height="560" rx="12" fill="url(#radial)"/>
+  <!-- Holographic overlay -->
+  <rect width="400" height="560" rx="12" fill="url(#holo)" opacity="0.05"/>
+
+  <!-- Glowing border -->
+  <rect x="1.5" y="1.5" width="397" height="557" rx="11" fill="none" stroke="url(#border-grad)" stroke-width="1.5" filter="url(#glow)"/>
+  <rect x="3" y="3" width="394" height="554" rx="10" fill="none" stroke="#5ebaef" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- FrameShift wordmark at top -->
+  <text x="200" y="38" text-anchor="middle" font-family="'Courier New', monospace" font-size="11" font-weight="700" letter-spacing="4" fill="#5ebaef" opacity="0.8">FRAMESHIFT</text>
+  <line x1="40" y1="48" x2="360" y2="48" stroke="#5ebaef" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Central icon: interconnected nodes (3 circles with lines between them) -->
+  <g transform="translate(200, 240)" filter="url(#glow-strong)">
+    <!-- Connection lines -->
+    <line x1="-60" y1="30" x2="0" y2="-50" stroke="#5ebaef" stroke-width="2" opacity="0.8"/>
+    <line x1="60" y1="30" x2="0" y2="-50" stroke="#5ebaef" stroke-width="2" opacity="0.8"/>
+    <line x1="-60" y1="30" x2="60" y2="30" stroke="#5ebaef" stroke-width="2" opacity="0.8"/>
+    <!-- Cross connections -->
+    <line x1="-60" y1="30" x2="60" y2="30" stroke="#5ebaef" stroke-width="1" opacity="0.4"/>
+    <!-- Nodes -->
+    <circle cx="0" cy="-50" r="18" fill="#0a0b10" stroke="#5ebaef" stroke-width="2.5"/>
+    <circle cx="0" cy="-50" r="8" fill="#5ebaef" opacity="0.9"/>
+    <circle cx="-60" cy="30" r="18" fill="#0a0b10" stroke="#5ebaef" stroke-width="2.5"/>
+    <circle cx="-60" cy="30" r="8" fill="#5ebaef" opacity="0.9"/>
+    <circle cx="60" cy="30" r="18" fill="#0a0b10" stroke="#5ebaef" stroke-width="2.5"/>
+    <circle cx="60" cy="30" r="8" fill="#5ebaef" opacity="0.9"/>
+  </g>
+
+  <!-- Bottom accent bar -->
+  <rect x="0" y="480" width="400" height="80" rx="0" fill="#5ebaef" opacity="0.06"/>
+  <rect x="0" y="480" width="400" height="1" fill="#5ebaef" opacity="0.4"/>
+
+  <!-- Persona name -->
+  <text x="200" y="530" text-anchor="middle" font-family="'Courier New', monospace" font-size="22" font-weight="700" letter-spacing="6" fill="#ffffff" filter="url(#glow)">AGENTS</text>
+
+  <!-- Corner accents -->
+  <polyline points="20,20 20,40 40,40" fill="none" stroke="#5ebaef" stroke-width="1.5" opacity="0.6"/>
+  <polyline points="380,20 380,40 360,40" fill="none" stroke="#5ebaef" stroke-width="1.5" opacity="0.6"/>
+  <polyline points="20,540 20,520 40,520" fill="none" stroke="#5ebaef" stroke-width="1.5" opacity="0.6"/>
+  <polyline points="380,540 380,520 360,520" fill="none" stroke="#5ebaef" stroke-width="1.5" opacity="0.6"/>
+</svg>
