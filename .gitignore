@@ -15,3 +15,11 @@ GROWTH.md
 .vscode/
 *.swp
 *.swo
+
+# Frontend
+node_modules/
+.next/
+.envrc
+
+# Secrets
+bin/leak-patterns.txt
