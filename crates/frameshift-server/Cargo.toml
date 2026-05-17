@@ -18,7 +18,7 @@ frameshift-objects-fs = { path = "../frameshift-objects-fs" }
 frameshift-runtime = { path = "../frameshift-runtime" }
 frameshift-memory = { path = "../frameshift-memory" }
 frameshift-pack = { path = "../frameshift-pack" }
-axum = { workspace = true }
+axum = { workspace = true, features = ["multipart"] }
 tokio = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
@@ -35,8 +35,16 @@ base64 = { workspace = true }
 hex = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+ed25519-dalek = { workspace = true }
+tempfile = { workspace = true }
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 tokio = { workspace = true }
 tower = { workspace = true }
 http-body-util = { workspace = true }
+tempfile = { workspace = true }
+ed25519-dalek = { workspace = true }
+tar = "0.4"
+flate2 = "1"

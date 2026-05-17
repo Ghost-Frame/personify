@@ -1,20 +1,26 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/frameshift-pack",
-    "crates/frameshift-vault",
-    "crates/frameshift-vault-local",
-    "crates/frameshift-template",
+    "crates/frameshift-capabilities",
+    "crates/frameshift-catalog",
+    "crates/frameshift-catalog-postgres",
+    "crates/frameshift-cli",
+    "crates/frameshift-client",
+    "crates/frameshift-compose",
+    "crates/frameshift-conformance",
     "crates/frameshift-memory",
     "crates/frameshift-memory-http",
     "crates/frameshift-memory-sqlite-fts",
-    "crates/frameshift-runtime",
-    "crates/frameshift-catalog",
-    "crates/frameshift-catalog-postgres",
     "crates/frameshift-objects",
     "crates/frameshift-objects-fs",
-    "crates/frameshift-server",
+    "crates/frameshift-pack",
+    "crates/frameshift-runtime",
     "crates/frameshift-seed",
+    "crates/frameshift-server",
+    "crates/frameshift-source",
+    "crates/frameshift-template",
+    "crates/frameshift-vault",
+    "crates/frameshift-vault-local",
 ]
 
 [workspace.package]

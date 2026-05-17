@@ -48,6 +48,13 @@ pub enum AppError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    /// The request lacks valid authentication or the asserted identity could
+    /// not be verified (e.g. signature mismatch, unknown author handle).
+    ///
+    /// Maps to `401 Unauthorized`. The message is included in the response body.
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+
     /// An unexpected backend failure occurred.
     ///
     /// Maps to `500 Internal Server Error`. The message is NOT included in
@@ -136,6 +143,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
+            AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m),
             AppError::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal server error".to_string(),

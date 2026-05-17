@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Vault trait and canonical TOML schema for personify"
+description = "Vault trait and canonical TOML schema for frameshift"
 
 [dependencies]
 serde = { workspace = true }

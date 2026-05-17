@@ -179,6 +179,7 @@ dependencies = [
  "matchit",
  "memchr",
  "mime",
+ "multer",
  "percent-encoding",
  "pin-project-lite",
  "serde_core",
@@ -898,6 +899,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "encoding_rs"
+version = "0.8.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1069,6 +1079,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "frameshift-capabilities"
+version = "0.1.0"
+dependencies = [
+ "frameshift-pack",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "frameshift-catalog"
 version = "0.1.0"
 dependencies = [
@@ -1103,6 +1122,54 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "frameshift-cli"
+version = "0.1.0"
+dependencies = [
+ "frameshift-client",
+]
+
+[[package]]
+name = "frameshift-client"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek",
+ "frameshift-pack",
+ "hex",
+ "serde",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
+name = "frameshift-compose"
+version = "0.1.0"
+dependencies = [
+ "frameshift-source",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "frameshift-conformance"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "frameshift-pack",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -1230,7 +1297,9 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "ed25519-dalek",
  "figment",
+ "flate2",
  "frameshift-catalog",
  "frameshift-catalog-postgres",
  "frameshift-memory",
@@ -1244,6 +1313,8 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "tar",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tower",
@@ -1251,6 +1322,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "frameshift-source"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -2151,6 +2232,23 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "multer"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
+dependencies = [
+ "bytes",
+ "encoding_rs",
+ "futures-util",
+ "http",
+ "httparse",
+ "memchr",
+ "mime",
+ "spin",
+ "version_check",
 ]
 
 [[package]]
@@ -3282,6 +3380,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+
+[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3388,6 +3492,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
 ]
 
 [[package]]

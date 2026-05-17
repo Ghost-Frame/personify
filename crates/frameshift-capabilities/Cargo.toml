@@ -1,0 +1,12 @@
+[package]
+name = "frameshift-capabilities"
+version = "0.1.0"
+description = "Runtime capability sandbox: tool filtering and usage tracking against pack capability manifests"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+frameshift-pack = { path = "../frameshift-pack" }

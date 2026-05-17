@@ -18,6 +18,29 @@ pub struct PackManifest {
     pub requires: Option<Requires>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens_required: Option<BTreeMap<String, TokenSpec>>,
+    /// Persona this pack extends (composition base). Format: "<name>@<semver-req>".
+    /// Resolution happens at install time; missing base is a hard error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+    /// Mixin packs composed on top of (extends -> self). Same format as `extends`.
+    /// Resolution order: extends -> mixins[0] -> mixins[1] -> ... -> self.
+    /// Conflicts between layers require explicit `override` declarations in the source.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mixin: Vec<String>,
+    /// Conformance baseline: minimum score the pack version asserts on its own test bundle.
+    /// The runtime conformance runner (M4) gates upgrades on this; if a newer version
+    /// scores below baseline on the OLD bundle, the upgrade is blocked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conformance_baseline: Option<ConformanceBaseline>,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct ConformanceBaseline {
+    /// Floor score (0.0..1.0) the pack claims on its bundled tests at publish time.
+    pub score: f32,
+    /// Hash of the test bundle this score was measured against (sha256 hex).
+    /// Lets the runtime detect if the bundle changed underneath the baseline.
+    pub bundle_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -144,5 +167,55 @@ version = "0.1.0"
         assert!(manifest.requires.is_none());
         assert!(manifest.tokens_required.is_none());
         assert!(manifest.parent_hash.is_none());
+    }
+
+    #[test]
+    fn manifest_roundtrip_with_extends_and_mixin() {
+        let original = PackManifest {
+            schema_version: 1,
+            name: "child".to_string(),
+            author_handle: "alice".to_string(),
+            author_pubkey: "age1test...".to_string(),
+            version: "1.0.0".to_string(),
+            parent_hash: None,
+            license: None,
+            capability_manifest: None,
+            requires: None,
+            tokens_required: None,
+            extends: Some("base@^1.0".to_string()),
+            mixin: vec!["addon-a@~0.2".to_string(), "addon-b@1.0.0".to_string()],
+            conformance_baseline: Some(ConformanceBaseline {
+                score: 0.85,
+                bundle_hash: "deadbeef".to_string(),
+            }),
+        };
+
+        let serialized = toml::to_string(&original).unwrap();
+        let parsed: PackManifest = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn manifest_omits_empty_optional_fields() {
+        let minimal = PackManifest {
+            schema_version: 1,
+            name: "minimal".to_string(),
+            author_handle: "t".to_string(),
+            author_pubkey: "k".to_string(),
+            version: "0.1.0".to_string(),
+            parent_hash: None,
+            license: None,
+            capability_manifest: None,
+            requires: None,
+            tokens_required: None,
+            extends: None,
+            mixin: Vec::new(),
+            conformance_baseline: None,
+        };
+
+        let serialized = toml::to_string(&minimal).unwrap();
+        assert!(!serialized.contains("extends"));
+        assert!(!serialized.contains("mixin"));
+        assert!(!serialized.contains("conformance_baseline"));
     }
 }

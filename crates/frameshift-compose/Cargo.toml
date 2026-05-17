@@ -1,0 +1,12 @@
+[package]
+name = "frameshift-compose"
+version = "0.1.0"
+description = "Persona composition engine -- extends + mixin resolution with deterministic merge order and conflict detection"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+frameshift-source = { path = "../frameshift-source" }
