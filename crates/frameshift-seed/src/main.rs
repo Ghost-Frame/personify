@@ -96,7 +96,7 @@ async fn run() -> Result<(), SeedError> {
 
     info!("connecting to postgres");
     let catalog = PostgresCatalog::new(PostgresCatalogConfig {
-        url: SecretString::new(postgres_url),
+        url: SecretString::new(postgres_url.clone()),
         pool_size: 5,
         connect_timeout: Duration::from_secs(10),
         statement_timeout: Duration::from_secs(30),
@@ -137,8 +137,9 @@ async fn run() -> Result<(), SeedError> {
             continue;
         }
 
+        let persona_toml = path.join("persona.toml");
         let agents_md = path.join("AGENTS.md");
-        if !agents_md.exists() {
+        if !persona_toml.exists() && !agents_md.exists() {
             continue;
         }
 
@@ -182,7 +183,13 @@ async fn run() -> Result<(), SeedError> {
         }
     }
 
-    info!("done: seeded={seeded} skipped={skipped}");
+    info!("pack versions seeded: seeded={seeded} skipped={skipped}");
+
+    // Post-seed: update pack descriptions and tags from persona.toml files.
+    info!("updating pack descriptions from persona.toml files");
+    update_pack_metadata(&postgres_url, &personas_path).await?;
+
+    info!("done");
     Ok(())
 }
 
@@ -420,5 +427,109 @@ license = "Apache-2.0"
 
     std::fs::write(path, content)?;
     info!("wrote synthetic pack.toml for {dir_name}");
+    Ok(())
+}
+
+/// Minimal persona.toml structure for extracting description and stack categories.
+#[derive(Debug, serde::Deserialize)]
+struct PersonaToml {
+    name: String,
+    #[serde(default)]
+    description: String,
+}
+
+/// Minimal patterns.toml structure for extracting stack categories as tags.
+#[derive(Debug, serde::Deserialize)]
+struct PatternsToml {
+    #[serde(default)]
+    stack: Vec<StackEntry>,
+}
+
+/// A single stack category entry.
+#[derive(Debug, serde::Deserialize)]
+struct StackEntry {
+    category: String,
+    #[serde(default)]
+    items: Vec<toml::Value>,
+}
+
+/// Post-seed pass: read persona.toml from each directory, extract description
+/// and derive tags from patterns.toml stack categories, then UPDATE the packs
+/// table directly. Uses tokio-postgres for the raw UPDATE since the catalog
+/// trait does not expose a pack metadata update method.
+async fn update_pack_metadata(postgres_url: &str, personas_root: &Path) -> Result<(), SeedError> {
+    let (client, connection) = tokio_postgres::connect(postgres_url, tokio_postgres::NoTls)
+        .await
+        .map_err(|e| SeedError::Io(std::io::Error::other(format!("pg connect: {e}"))))?;
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            error!("pg connection error: {e}");
+        }
+    });
+
+    for entry in std::fs::read_dir(personas_root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let persona_path = path.join("persona.toml");
+        if !persona_path.exists() {
+            continue;
+        }
+
+        let dir_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let persona_content = std::fs::read_to_string(&persona_path)?;
+        let persona: PersonaToml = toml::from_str(&persona_content).map_err(|e| {
+            SeedError::Io(std::io::Error::other(format!(
+                "parse persona.toml for {dir_name}: {e}"
+            )))
+        })?;
+
+        // Derive tags from patterns.toml stack categories.
+        let mut tags: Vec<String> = Vec::new();
+        let patterns_path = path.join("patterns.toml");
+        if patterns_path.exists() {
+            let patterns_content = std::fs::read_to_string(&patterns_path)?;
+            if let Ok(patterns) = toml::from_str::<PatternsToml>(&patterns_content) {
+                for stack in &patterns.stack {
+                    tags.push(stack.category.clone());
+                }
+            }
+        }
+
+        let description = if persona.description.is_empty() {
+            format!("{} persona for AI coding agents", dir_name)
+        } else {
+            persona.description
+        };
+
+        let result = client
+            .execute(
+                "UPDATE packs SET description = $1, tags = $2 WHERE name = $3",
+                &[&description, &tags, &persona.name],
+            )
+            .await;
+
+        match result {
+            Ok(rows) if rows > 0 => {
+                info!("updated metadata for {dir_name}: {} tags", tags.len());
+            }
+            Ok(_) => {
+                warn!("no pack row found for {dir_name}, skipping metadata update");
+            }
+            Err(e) => {
+                warn!("failed to update metadata for {dir_name}: {e}");
+            }
+        }
+    }
+
     Ok(())
 }

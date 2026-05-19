@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "@ghost-frame/theme/theme/style.css";
+import "@ghost-frame/theme/style.css";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 

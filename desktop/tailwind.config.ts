@@ -7,7 +7,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Map @ghost-frame/theme CSS vars for Tailwind usage
+        // Map theme CSS vars for Tailwind usage
         "sa-bg": "var(--sa-bg)",
         "sa-surface": "var(--sa-surface)",
         "sa-surface-hover": "var(--sa-surface-hover)",
