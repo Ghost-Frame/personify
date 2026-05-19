@@ -16,6 +16,10 @@ GROWTH.md
 *.swp
 *.swo
 
+# Proprietary surfaces (not open source)
+desktop/
+marketplace/
+
 # Frontend
 node_modules/
 .next/
