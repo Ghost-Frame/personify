@@ -72,6 +72,10 @@ invoke_when = "All cryptographic implementations -- tests BEFORE code"
 
 Patch operations replace hand-editing. Semantic diffs show typed changes between versions, not text diffs.
 
+## Memory
+
+Personas can declare a memory requirement in their pack manifest. The runtime satisfies it through a pluggable adapter trait with backends for HTTP APIs and local SQLite (full-text search). Any knowledge system that exposes store/search/recall endpoints works -- [Kleos](https://github.com/Ghost-Frame/Kleos) is the reference integration.
+
 ## Growth
 
 Growth is local. A single append-only file per installed persona, stored in the central store. Sessions deposit findings -- things learned, mistakes caught, patterns discovered. Future sessions read them back. Growth never flows upstream -- it stays on your machine, in your project context.
