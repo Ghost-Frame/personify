@@ -2,7 +2,7 @@
   <img src="personas/assets/banner.png" alt="Frameshift" width="100%" />
 </p>
 
-# Frameshift
+# FrameShift (WIP Active development) 
 
 A runtime and marketplace for versioned, composable behavioral personas for AI coding agents.
 
