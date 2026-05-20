@@ -421,7 +421,7 @@ name = "{dir_name}"
 author_handle = "{author_handle}"
 author_pubkey = "{pubkey_hex}"
 version = "0.1.0"
-license = "Apache-2.0"
+license = "Elastic-2.0"
 "#
     );
 
