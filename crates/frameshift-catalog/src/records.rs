@@ -124,6 +124,12 @@ pub struct PackRecord {
     /// Incremented by [`crate::backend::CatalogBackend::increment_download_counter`].
     /// Never decremented.
     pub total_downloads: u64,
+
+    /// Base persona pack name from the manifest `extends` field.
+    ///
+    /// `None` for root packs that do not extend another pack.
+    /// Format is the raw value from the pack manifest (e.g. `"base@^1.0"`).
+    pub extends: Option<String>,
 }
 
 /// An immutable record of a specific published version of a pack.

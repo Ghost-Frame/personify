@@ -85,6 +85,8 @@ pub(crate) struct PackRow {
     pub latest_version: Option<String>,
     /// Cumulative download counter; stored as i64, converted to u64 on read.
     pub total_downloads: i64,
+    /// Base persona pack name from the manifest `extends` field; None for root packs.
+    pub extends: Option<String>,
 }
 
 /// Insertable struct for the `packs` table.
@@ -104,6 +106,8 @@ pub(crate) struct NewPackRow {
     pub description: String,
     /// Initial latest_version (set to the first version being registered).
     pub latest_version: Option<String>,
+    /// Base persona pack name from the manifest `extends` field; None for root packs.
+    pub extends: Option<String>,
 }
 
 /// Row struct for the `pack_versions` table.
@@ -263,6 +267,7 @@ impl PackRow {
             created_at: self.created_at,
             latest_version: self.latest_version,
             total_downloads: self.total_downloads.max(0) as u64,
+            extends: self.extends,
         })
     }
 }

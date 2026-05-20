@@ -291,4 +291,26 @@ pub trait CatalogBackend: Send + Sync {
     ///
     /// Never panics.
     async fn health(&self) -> Result<HealthStatus, CatalogError>;
+
+    /// Set the `extends` field on the pack head record.
+    ///
+    /// Records the base persona pack name from the manifest `extends` field.
+    /// Pass `None` to clear the value (root pack with no base). This is a
+    /// best-effort update called after `register_pack_version`; the caller
+    /// MUST ensure the pack row already exists (i.e. `register_pack_version`
+    /// succeeded) before calling this method.
+    ///
+    /// # Errors
+    ///
+    /// - `CatalogError::NotFound` (kind `"pack"`) -- the pack does not exist.
+    /// - `CatalogError::BackendError` -- unexpected backend failure.
+    ///
+    /// # Panics
+    ///
+    /// Never panics.
+    async fn set_pack_extends(
+        &self,
+        pack_name: &str,
+        extends: Option<&str>,
+    ) -> Result<(), CatalogError>;
 }

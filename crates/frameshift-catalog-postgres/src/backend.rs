@@ -314,6 +314,7 @@ impl CatalogBackend for PostgresCatalog {
             tags: vec![],
             description: String::new(),
             latest_version: Some(record.version.clone()),
+            extends: None,
         };
 
         let schema_version_i32 = i32::try_from(record.schema_version).map_err(|_| {
@@ -552,8 +553,9 @@ impl CatalogBackend for PostgresCatalog {
             &filters.target_context,
             &filters.author,
             &filters.query,
+            &filters.extends,
         ) {
-            (None, None, None, None) => match &filters.sort {
+            (None, None, None, None, None) => match &filters.sort {
                 SortMode::TopRated | SortMode::Trending => packs::table
                     .select(PackRow::as_select())
                     .order((packs::total_downloads.desc(), packs::name.asc()))
@@ -572,8 +574,8 @@ impl CatalogBackend for PostgresCatalog {
                     .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
             },
             _ => {
-                // For combinations involving GIN tag, target_context, author, or FTS
-                // filters, use the raw-SQL helper which binds params safely via
+                // For combinations involving GIN tag, target_context, author, FTS,
+                // or extends filters, use the raw-SQL helper which binds params safely via
                 // numbered params.
                 self.search_raw(
                     SearchParams {
@@ -581,6 +583,7 @@ impl CatalogBackend for PostgresCatalog {
                         target_context: filters.target_context.as_deref(),
                         author: filters.author.as_ref(),
                         query_text: filters.query.as_deref(),
+                        extends: filters.extends.as_deref(),
                         sort: &filters.sort,
                         limit: limit_i,
                         offset: offset_i,
@@ -758,6 +761,43 @@ impl CatalogBackend for PostgresCatalog {
         Ok(())
     }
 
+    /// Set the `extends` field on the pack head record.
+    ///
+    /// SQL shape:
+    /// ```sql
+    /// UPDATE packs SET extends = $1 WHERE name = $2
+    /// ```
+    /// Uses the primary key index on `packs(name)`. Returns `NotFound` if the
+    /// pack does not exist (0 rows affected).
+    #[instrument(skip(self, pack_name, extends), fields(pack = %pack_name))]
+    async fn set_pack_extends(
+        &self,
+        pack_name: &str,
+        extends: Option<&str>,
+    ) -> Result<(), CatalogError> {
+        let mut conn = self.pool.get().await.map_err(map_pool_error)?;
+
+        let rows_affected = diesel::sql_query(
+            "UPDATE packs SET extends = $1 WHERE name = $2",
+        )
+        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(
+            extends.map(str::to_string),
+        )
+        .bind::<diesel::sql_types::Text, _>(pack_name.to_string())
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| map_diesel_error(e, "pack", pack_name.to_string()))?;
+
+        if rows_affected == 0 {
+            return Err(CatalogError::NotFound {
+                kind: "pack",
+                key: pack_name.to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
     /// Return the current health status of this backend.
     ///
     /// Runs `SELECT 1` with a 1-second deadline. Returns `HealthStatus { healthy: true }`
@@ -835,6 +875,11 @@ struct SearchParams<'a> {
     pub author: Option<&'a Ed25519PublicKey>,
     /// Full-text search query; `None` means no FTS filter.
     pub query_text: Option<&'a str>,
+    /// Base persona pack name filter; `None` means no extends filter.
+    ///
+    /// When set, adds `extends = $n` to the WHERE clause so only packs that
+    /// extend the named base pack are returned.
+    pub extends: Option<&'a str>,
     /// Sort mode to apply.
     pub sort: &'a SortMode,
     /// Maximum number of results (SQL LIMIT).
@@ -871,6 +916,7 @@ impl PostgresCatalog {
             target_context,
             author,
             query_text,
+            extends,
             sort,
             limit,
             offset,
@@ -901,6 +947,10 @@ impl PostgresCatalog {
         } else {
             None
         };
+        if extends.is_some() {
+            where_parts.push(format!("extends = ${bind_idx}"));
+            bind_idx += 1;
+        }
 
         let where_sql = if where_parts.is_empty() {
             String::new()
@@ -921,52 +971,59 @@ impl PostgresCatalog {
 
         let sql = format!(
             "SELECT name, current_author, tags, description, created_at, \
-             latest_version, total_downloads \
+             latest_version, total_downloads, extends \
              FROM packs \
              {where_sql} \
              {order_sql} \
              LIMIT ${limit_idx} OFFSET ${offset_idx}"
         );
 
-        // Enumerate all 16 filter combinations (tag x target_context x author x query)
+        // Enumerate all 32 filter combinations (tag x target_context x author x query x extends)
         // to satisfy Diesel's static typing for bind parameters.
-        // Bind order: tag, target_context, author, query_text, limit, offset.
-        let rows: Vec<PackRow> = match (tag, target_context, author, query_text) {
-            (None, None, None, None) => diesel::sql_query(&sql)
+        // Bind order: tag, target_context, author, query_text, extends, limit, offset.
+        let rows: Vec<PackRow> = match (tag, target_context, author, query_text, extends) {
+            (None, None, None, None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
                 .bind::<diesel::sql_types::BigInt, _>(offset)
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), None, None, None) => diesel::sql_query(&sql)
+            (Some(t), None, None, None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
                 .bind::<diesel::sql_types::BigInt, _>(offset)
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, Some(ctx), None, None) => diesel::sql_query(&sql)
+            (None, Some(ctx), None, None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(ctx)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
                 .bind::<diesel::sql_types::BigInt, _>(offset)
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, None, Some(a), None) => diesel::sql_query(&sql)
+            (None, None, Some(a), None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
                 .bind::<diesel::sql_types::BigInt, _>(limit)
                 .bind::<diesel::sql_types::BigInt, _>(offset)
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, None, None, Some(q)) => diesel::sql_query(&sql)
+            (None, None, None, Some(q), None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(q)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
                 .bind::<diesel::sql_types::BigInt, _>(offset)
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), Some(ctx), None, None) => diesel::sql_query(&sql)
+            (None, None, None, None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), None, None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::Text, _>(ctx)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
@@ -974,7 +1031,7 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), None, Some(a), None) => diesel::sql_query(&sql)
+            (Some(t), None, Some(a), None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
                 .bind::<diesel::sql_types::BigInt, _>(limit)
@@ -982,7 +1039,7 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), None, None, Some(q)) => diesel::sql_query(&sql)
+            (Some(t), None, None, Some(q), None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::Text, _>(q)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
@@ -990,32 +1047,15 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, Some(ctx), Some(a), None) => diesel::sql_query(&sql)
-                .bind::<diesel::sql_types::Text, _>(ctx)
-                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
-                .bind::<diesel::sql_types::BigInt, _>(limit)
-                .bind::<diesel::sql_types::BigInt, _>(offset)
-                .load(&mut **conn)
-                .await
-                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, Some(ctx), None, Some(q)) => diesel::sql_query(&sql)
-                .bind::<diesel::sql_types::Text, _>(ctx)
-                .bind::<diesel::sql_types::Text, _>(q)
-                .bind::<diesel::sql_types::BigInt, _>(limit)
-                .bind::<diesel::sql_types::BigInt, _>(offset)
-                .load(&mut **conn)
-                .await
-                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, None, Some(a), Some(q)) => diesel::sql_query(&sql)
-                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
-                .bind::<diesel::sql_types::Text, _>(q)
-                .bind::<diesel::sql_types::BigInt, _>(limit)
-                .bind::<diesel::sql_types::BigInt, _>(offset)
-                .load(&mut **conn)
-                .await
-                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), Some(ctx), Some(a), None) => diesel::sql_query(&sql)
+            (Some(t), None, None, None, Some(ext)) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, Some(ctx), Some(a), None, None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(ctx)
                 .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
                 .bind::<diesel::sql_types::BigInt, _>(limit)
@@ -1023,7 +1063,56 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), Some(ctx), None, Some(q)) => diesel::sql_query(&sql)
+            (None, Some(ctx), None, Some(q), None) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, Some(ctx), None, None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, None, Some(a), Some(q), None) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, None, Some(a), None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, None, None, Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), Some(a), None, None) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), None, Some(q), None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::Text, _>(ctx)
                 .bind::<diesel::sql_types::Text, _>(q)
@@ -1032,7 +1121,16 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), None, Some(a), Some(q)) => diesel::sql_query(&sql)
+            (Some(t), Some(ctx), None, None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), None, Some(a), Some(q), None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
                 .bind::<diesel::sql_types::Text, _>(q)
@@ -1041,7 +1139,25 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (None, Some(ctx), Some(a), Some(q)) => diesel::sql_query(&sql)
+            (Some(t), None, Some(a), None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), None, None, Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, Some(ctx), Some(a), Some(q), None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(ctx)
                 .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
                 .bind::<diesel::sql_types::Text, _>(q)
@@ -1050,11 +1166,89 @@ impl PostgresCatalog {
                 .load(&mut **conn)
                 .await
                 .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
-            (Some(t), Some(ctx), Some(a), Some(q)) => diesel::sql_query(&sql)
+            (None, Some(ctx), Some(a), None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, Some(ctx), None, Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, None, Some(a), Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), Some(a), Some(q), None) => diesel::sql_query(&sql)
                 .bind::<diesel::sql_types::Text, _>(t)
                 .bind::<diesel::sql_types::Text, _>(ctx)
                 .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
                 .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), Some(a), None, Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), None, Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), None, Some(a), Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (None, Some(ctx), Some(a), Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
+                .bind::<diesel::sql_types::BigInt, _>(limit)
+                .bind::<diesel::sql_types::BigInt, _>(offset)
+                .load(&mut **conn)
+                .await
+                .map_err(|e| map_diesel_error(e, "pack", String::new()))?,
+            (Some(t), Some(ctx), Some(a), Some(q), Some(ext)) => diesel::sql_query(&sql)
+                .bind::<diesel::sql_types::Text, _>(t)
+                .bind::<diesel::sql_types::Text, _>(ctx)
+                .bind::<diesel::sql_types::Binary, _>(a.0.to_vec())
+                .bind::<diesel::sql_types::Text, _>(q)
+                .bind::<diesel::sql_types::Text, _>(ext)
                 .bind::<diesel::sql_types::BigInt, _>(limit)
                 .bind::<diesel::sql_types::BigInt, _>(offset)
                 .load(&mut **conn)

@@ -410,6 +410,21 @@ pub async fn publish_pack(
         return Err(AppError::from_catalog(e, "pack_version"));
     }
 
+    // Record the `extends` base persona name from the manifest onto the pack
+    // head record. This is a best-effort update: if it fails, the pack is still
+    // published but the extends field will be missing from search results.
+    if let Err(e) = state
+        .catalog
+        .set_pack_extends(&manifest.name, manifest.extends.as_deref())
+        .await
+    {
+        tracing::warn!(
+            pack = %manifest.name,
+            error = %e,
+            "set_pack_extends failed after successful publish; extends field not set"
+        );
+    }
+
     // Best-effort: ensure the parent pack record exists so that `GET /v1/packs/{name}`
     // resolves. The catalog trait does not expose a separate "upsert pack" call,
     // so we rely on backends that auto-create the parent record on
@@ -543,6 +558,12 @@ pub struct SearchQuery {
 
     /// Number of results to skip before returning matches.
     pub offset: Option<u32>,
+
+    /// Filter by base persona pack name (exact match on the `extends` column).
+    ///
+    /// Returns only packs whose manifest declared they extend the given base pack.
+    /// `None` (parameter omitted) means no filter is applied.
+    pub extends: Option<String>,
 }
 
 /// Response body for `GET /v1/packs`.
@@ -601,6 +622,7 @@ pub async fn search_packs(
         tag: q.tag,
         author: None, // author pubkey decoding deferred; pass None for now
         target_context: None,
+        extends: q.extends,
         sort,
         limit: clamped,
         offset: q.offset.unwrap_or(0),

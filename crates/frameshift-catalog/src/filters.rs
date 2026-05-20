@@ -78,6 +78,13 @@ pub struct PackSearchFilters {
     /// `None` means no context filter is applied.
     pub target_context: Option<String>,
 
+    /// Filter results to packs that extend the named base persona pack.
+    ///
+    /// When set, only packs whose `extends` column starts with the given base
+    /// pack name (prefix match before any `@`) are returned. `None` means no
+    /// extends filter is applied.
+    pub extends: Option<String>,
+
     /// The sort order to apply to results.
     ///
     /// Defaults to [`SortMode::Recent`].
@@ -106,6 +113,7 @@ impl Default for PackSearchFilters {
             tag: None,
             author: None,
             target_context: None,
+            extends: None,
             sort: SortMode::Recent,
             limit: 20,
             offset: 0,

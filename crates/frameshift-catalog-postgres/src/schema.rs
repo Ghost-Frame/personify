@@ -58,6 +58,8 @@ diesel::table! {
         latest_version -> Nullable<Text>,
         /// Cumulative download count; monotonically increasing.
         total_downloads -> BigInt,
+        /// Base persona pack name from the manifest `extends` field; NULL for root packs.
+        extends -> Nullable<Text>,
     }
 }
 
