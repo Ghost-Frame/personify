@@ -26,7 +26,7 @@ members = [
 [workspace.package]
 edition = "2021"
 rust-version = "1.75"
-license = "Apache-2.0"
+license = "Elastic-2.0"
 
 [workspace.dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }

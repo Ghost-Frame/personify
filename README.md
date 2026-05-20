@@ -124,7 +124,7 @@ cargo run -p frameshift-cli -- install cryptographic@0.1.0 --from-path personas/
 
 ## License
 
-AGPL-3.0. See [LICENSE](LICENSE) for details.
+Elastic License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Further reading
 

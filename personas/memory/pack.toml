@@ -3,7 +3,7 @@ name = "memory"
 author_handle = "ghost-frame"
 author_pubkey = "UNSIGNED"
 version = "0.1.0"
-license = "AGPL-3.0"
+license = "Elastic-2.0"
 
 [capability_manifest]
 required_tools = ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
