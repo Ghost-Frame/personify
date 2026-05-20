@@ -198,7 +198,7 @@ impl ServerConfig {
     /// variables are absent.
     ///
     /// Environment variables are read with no prefix (e.g. `BIND_ADDR` not
-    /// `PERSONIFY_BIND_ADDR`). See the module-level documentation for the full
+    /// `FRAMESHIFT_BIND_ADDR`). See the module-level documentation for the full
     /// mapping.
     ///
     /// # Errors

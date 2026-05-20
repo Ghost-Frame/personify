@@ -1,6 +1,6 @@
 //! # frameshift-memory
 //!
-//! Defines the pluggable memory adapter contract for the Personify persona
+//! Defines the pluggable memory adapter contract for the Frameshift persona
 //! marketplace platform.
 //!
 //! This crate contains:

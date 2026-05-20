@@ -33,9 +33,9 @@ use tracing::{Level, Span};
 /// after the span is created, so the field MUST be declared up front (as
 /// [`tracing::field::Empty`]) or the recorded value never appears in logs.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct PersonifyMakeSpan;
+pub struct FrameshiftMakeSpan;
 
-impl<B> tower_http::trace::MakeSpan<B> for PersonifyMakeSpan {
+impl<B> tower_http::trace::MakeSpan<B> for FrameshiftMakeSpan {
     /// Open one span per HTTP request with the fields documented at the module
     /// level.  `request_id` is declared empty so the request-ID middleware can
     /// populate it via `Span::current().record("request_id", ...)`.
@@ -53,15 +53,15 @@ impl<B> tower_http::trace::MakeSpan<B> for PersonifyMakeSpan {
 
 /// Build a [`TraceLayer`] configured for the frameshift HTTP server.
 ///
-/// Opens a `DEBUG`-level span per request via [`PersonifyMakeSpan`] (which
+/// Opens a `DEBUG`-level span per request via [`FrameshiftMakeSpan`] (which
 /// pre-declares the `request_id` and `status` fields). On response, logs at
 /// `INFO` level (controlled by `DefaultOnResponse`). Request and response
 /// bodies are never captured.
 pub fn make_trace_layer() -> TraceLayer<
     tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
-    PersonifyMakeSpan,
+    FrameshiftMakeSpan,
 > {
     TraceLayer::new_for_http()
-        .make_span_with(PersonifyMakeSpan)
+        .make_span_with(FrameshiftMakeSpan)
         .on_response(DefaultOnResponse::new().level(Level::INFO))
 }

@@ -1,4 +1,4 @@
-//! Template parser and renderer for Personify persona files.
+//! Template parser and renderer for Frameshift persona files.
 //!
 //! This crate provides two main capabilities:
 //!

@@ -1,6 +1,6 @@
 //! # frameshift-runtime
 //!
-//! Orchestration layer for the Personify persona marketplace platform.
+//! Orchestration layer for the Frameshift persona marketplace platform.
 //!
 //! This crate ties the vault, template, and memory layers together into a
 //! single [`Runtime`] value that can load a persona from its constituent
