@@ -6,19 +6,23 @@
 
 A runtime and marketplace for versioned, composable behavioral personas for AI coding agents.
 
-Personas are not instruction lists. They are complete behavioral identities -- typed source (structured TOML) that renders to per-agent markdown (Claude, Codex, Gemini). A persona survives long sessions, surprising inputs, and the slow drift that turns careful operators into sloppy ones around turn 200.
+Personas are not instruction lists. They are complete behavioral identities. The persona library ships freeform `AGENTS.md` markdown with a `pack.toml` manifest; the engine indexes the markdown, composes per-agent rendered output (Claude, Codex, Gemini, generic), and activates it via a single CLI call. A persona survives long sessions, surprising inputs, and the slow drift that turns careful operators into sloppy ones around turn 200.
 
 ## What this repo contains
 
-- `crates/` -- Rust workspace (20 crates): CLI, client engine, pack tooling, composition, conformance, catalog, memory, vault, object storage, HTTP server
-- `personas/` -- pack manifests for the persona library (see the [deep product writeup](personas/README.md))
+- `crates/` -- Rust workspace (24 crates): CLI, client engine, pack tooling, composition, conformance, catalog, memory, vault, object storage, HTTP server, MCP server, watch daemon, orchestrator (semantic-match persona selection), growth log
+- `personas/` -- pack manifests for the persona library
 
 ## How it works
 
 Personas distribute as signed packs -- content-addressed tarballs with Ed25519 signatures and capability manifests. The CLI installs them into a central store outside your project tree. Your repo never gets persona files.
 
 ```bash
-frameshift install cryptographic@0.3.1
+# Install + activate + render + print rendered output, one round-trip:
+frameshift use cryptographic --from ./personas
+
+# Or, split:
+frameshift install cryptographic@0.1.0 --from-path ./personas/cryptographic
 frameshift activate cryptographic
 ```
 
@@ -31,46 +35,42 @@ projects/<project-id>/
   lock.toml                              # Exact versions, hashes, author pubkeys
   active                                 # Currently active persona
   personas/<name>/
-    source/                              # Pack contents (TOML + markdown)
+    source/                              # Pack contents (AGENTS.md + pack.toml)
     rendered/{claude,codex,gemini,generic}/   # Per-agent rendered output
     growth.md                            # Local-only, append-only
+  orchestrator/                          # Per-project automate mode + audit state
 ```
 
 Project ID is `sha256(realpath(project_root))`. Your project tree is never written to.
 
 ## Persona source format
 
-Personas are structured TOML, not freeform markdown. Markdown is a render target.
+A persona is a directory containing two files:
+
+```
+personas/<name>/
+  AGENTS.md     # The freeform persona body (identity, rules, frame, skills, growth notes)
+  pack.toml     # Manifest: name, version, license, author, capability manifest
+```
+
+Example `pack.toml`:
 
 ```toml
-# persona.toml
 schema_version = 1
 name = "cryptographic"
-voice = "citation-driven, careful, willing to say I don't know"
+version = "0.1.0"
+author_handle = "ghost-frame"
+author_pubkey = "ed25519:<hex>"
+license = "Elastic-2.0"
 
-[anchor.l2]
-text = "You are working on cryptographic primitives, verifying not inventing"
-
-[[default_questions]]
-question = "Which specification or RFC governs this code?"
+[capability_manifest]
+required_tools = ["Read", "Edit", "Write", "Bash"]
+network_egress = false
 ```
 
-```toml
-# rules.toml
-[[rule]]
-id = "no-rolling-crypto"
-layer = "L1"
-text = "Never roll a new cryptographic primitive when an audited implementation exists."
-```
+`AGENTS.md` is freeform markdown -- L2 anchor, default questions, rules, skills, classification axis, cascade anchors, growth integration. Structure follows the L1/L2/L3 behavioral-architecture pattern described in `personas/README.md`.
 
-```toml
-# skills.toml
-[[skill]]
-id = "test-driven-development"
-invoke_when = "All cryptographic implementations -- tests BEFORE code"
-```
-
-Patch operations replace hand-editing. Semantic diffs show typed changes between versions, not text diffs.
+A typed-source format (structured TOML with separate `rules.toml`, `skills.toml`, semantic diffs, patch operations) lives in the `frameshift-source` crate as the next-generation persona format. The live install path uses freeform `AGENTS.md` today.
 
 ## Memory
 
@@ -88,7 +88,12 @@ A persona is not static. It remembers what happened last time.
 frameshift install <name@version>            # Install a persona pack
 frameshift install <name@version> --from-path <dir>  # Install from local directory
 frameshift activate <name>                   # Set active persona for this project
+frameshift use <name> --from <library>       # Install on demand + activate + print rendered persona
+frameshift select [--task TEXT] [--library DIR]      # Rank candidates with score/confidence/rationale
+frameshift automate <on|off|status|lock|unlock>      # Per-project automate-mode state machine
 frameshift sync                              # Reconcile central store with lockfile
+frameshift grow append <persona> <text>      # Append a line to a persona's growth log
+frameshift migrate                           # Move legacy project files into the central store
 frameshift gc                                # Remove unreferenced cache entries
 frameshift project-id                        # Print hashed project ID
 ```
@@ -131,7 +136,3 @@ Elastic License 2.0. See [LICENSE](LICENSE) for details.
 The Elastic License 2.0 prohibits offering FrameShift to third parties as a
 hosted or managed service. To sell, host, or distribute FrameShift on your own
 platform, contact us for a commercial license: support@syntheos.dev.
-
-## Further reading
-
-- [Persona deep dive and product writeup](personas/README.md)

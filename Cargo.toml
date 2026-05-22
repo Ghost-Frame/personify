@@ -8,11 +8,15 @@ members = [
     "crates/frameshift-client",
     "crates/frameshift-compose",
     "crates/frameshift-conformance",
+    "crates/frameshift-daemon",
+    "crates/frameshift-growth",
+    "crates/frameshift-mcp",
     "crates/frameshift-memory",
     "crates/frameshift-memory-http",
     "crates/frameshift-memory-sqlite-fts",
     "crates/frameshift-objects",
     "crates/frameshift-objects-fs",
+    "crates/frameshift-orchestrator",
     "crates/frameshift-pack",
     "crates/frameshift-runtime",
     "crates/frameshift-seed",
@@ -62,3 +66,6 @@ testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["postgres"] }
 figment = { version = "0.10", features = ["env", "toml"] }
 mimalloc = "0.1"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+notify = { version = "6", default-features = false, features = ["macos_kqueue"] }

@@ -10,6 +10,7 @@
 //! produces a [`Score`], and feeds it to the [`RegressionGate`] during upgrades.
 
 pub mod bundle;
+pub mod caller;
 pub mod case;
 pub mod error;
 pub mod gate;
@@ -17,6 +18,7 @@ pub mod runner;
 pub mod score;
 
 pub use bundle::{bundle_hash, load_from_dir, TestBundle};
+pub use caller::{score_bundle_with_caller, CallerScorer};
 pub use case::{ExpectedBehavior, ScorerKind, TestCase};
 pub use error::ConformanceError;
 pub use gate::{GateDecision, RegressionGate};

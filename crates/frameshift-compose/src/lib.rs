@@ -12,9 +12,9 @@
 //! Later layers override earlier ones on ID collision (last-write-wins),
 //! with a `Conflict` record emitted so the user can see what was overridden.
 //!
-//! Most function bodies are `todo!("M1 impl")` -- only the pieces required
-//! for WS-5 scaffolding are implemented (basic `merge_sources` with
-//! `BaseFirst` order, `LocalResolver::resolve` against a base directory).
+//! The full M1 implementation is complete: `Composer::compose` resolves the
+//! base and mixins, builds typed `MergeLayer` entries, and delegates to
+//! `merge_layers` which enforces SD6 L1 override protection.
 
 pub mod composed;
 pub mod composer;
@@ -27,5 +27,5 @@ pub use composed::{ComposedPersona, Layer as ComposedLayer, Provenance};
 pub use composer::Composer;
 pub use conflict::{detect_conflicts, Conflict};
 pub use error::ComposeError;
-pub use merge::{merge_sources, MergeOrder};
+pub use merge::{merge_layers, merge_sources, MergeLayer, MergeOrder};
 pub use resolver::{LocalResolver, SourceResolver};

@@ -1,0 +1,13 @@
+[package]
+name = "frameshift-growth"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Append-only local growth log for Frameshift personas"
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
