@@ -4,12 +4,6 @@
 
 # Frameshift
 
-<!-- TODO(frameshift): This file is the persona-library overview, NOT the "deep product
-     writeup" the main READMEs used to link to. That deep-dive doesn't exist yet. When it's
-     written (here or as its own doc), re-add the "deep product writeup" / "Further reading"
-     links in both README.md and server/README.md -- they were removed 2026-05-21 because
-     they pointed at a writeup that wasn't real. -->
-
 **Same model. Different frame.**
 
 Activate the cryptographer and you get a spec-anchored operator who refuses to invent primitives. Switch to systems and you get a paranoid engineer who state-checks before touching anything and has a rollback ready. Switch to writer and you get a technical editor who deletes a sentence before adding one. Same model. Different frame.
@@ -20,55 +14,49 @@ Each frame is a complete behavioral identity. Not a list of instructions. A cohe
 
 A marketplace and runtime for versioned, composable behavioral personas for AI coding agents.
 
-- **Typed source format.** Personas are structured TOML -- not freeform markdown. Markdown is a render target, generated per-agent (Claude, Codex, Gemini).
-- **CLI.** `frameshift install`, `activate`, `sync`, `gc`. Manages a central store outside your project tree. Your repo never gets persona files.
+- **Freeform AGENTS.md format.** Each persona is `AGENTS.md` plus a `pack.toml` manifest. AGENTS.md is the canonical body; the engine composes per-agent rendered output (Claude, Codex, Gemini, generic) at activation time by prepending a host-side overlay and a persona header.
+- **CLI.** `frameshift use`, `install`, `activate`, `select`, `automate`, `sync`, `gc`. Manages a central store outside your project tree. Your repo never gets persona files.
 - **Signed packs.** Content-addressed, Ed25519-signed tarballs. Deterministic canonicalization for reproducible hashes.
 - **Composition.** Extend a base persona, mix in overlays. Conflict detection at install time.
 - **Marketplace server.** Catalog, version resolution, distribution.
+- **Typed-source path (next).** A structured TOML format with semantic diffs and patch operations (`frameshift rule add`, `frameshift skill remove`) lives in the `frameshift-source` crate as the next-generation persona representation; the live install path uses freeform AGENTS.md.
 
 ## Persona source format
 
-Personas are three TOML files, not a single markdown document:
+A persona is a directory containing two files:
+
+```
+personas/<name>/
+  AGENTS.md     # Persona body: identity, rules, frame, skills, growth integration
+  pack.toml     # Manifest: name, version, license, author, capability manifest
+```
+
+`AGENTS.md` is freeform markdown structured around the L1/L2/L3 behavioral-architecture pattern (see "Why frames beat instruction lists" below). The renderer prepends a per-host overlay and a persona header, then writes one file per target under `rendered/{claude,codex,gemini,generic}/`.
+
+The `pack.toml` manifest declares identity, version, license, signing key, and the capability manifest:
 
 ```toml
-# persona.toml
 schema_version = 1
 name = "cryptographic"
-voice = "citation-driven, careful, willing to say I don't know"
+version = "0.1.0"
+author_handle = "ghost-frame"
+author_pubkey = "ed25519:<hex>"
+license = "Elastic-2.0"
 
-[anchor.l2]
-text = "You are working on cryptographic primitives, verifying not inventing"
-
-[[default_questions]]
-question = "Which specification or RFC governs this code?"
+[capability_manifest]
+required_tools = ["Read", "Edit", "Write", "Bash"]
+filesystem_scope = "project-only"
+network_egress = false
 ```
-
-```toml
-# rules.toml
-[[rule]]
-id = "no-rolling-crypto"
-layer = "L1"
-text = "Never roll a new cryptographic primitive when an audited implementation exists."
-
-[[rule]]
-id = "prefer-rfc-citations"
-layer = "L3"
-text = "Cite the governing RFC when discussing protocol behavior."
-```
-
-```toml
-# skills.toml
-[[skill]]
-id = "test-driven-development"
-invoke_when = "All cryptographic implementations -- tests BEFORE code"
-```
-
-The renderer projects this typed source into per-target markdown (Claude, Codex, Gemini, generic). Patch operations (`frameshift rule add`, `frameshift skill remove`) replace hand-editing. Semantic diffs show typed changes between versions -- not text diffs.
 
 ## Installation
 
 ```bash
-frameshift install cryptographic@0.3.1
+# Install + activate + print rendered persona in one call:
+frameshift use cryptographic --from ./personas
+
+# Or, split:
+frameshift install cryptographic@0.1.0 --from-path ./personas/cryptographic
 frameshift activate cryptographic
 ```
 
@@ -80,25 +68,26 @@ projects/<project-id>/
   lock.toml                       # Installed personas, versions, hashes
   active                          # Currently active persona
   personas/<name>/
-    source/                       # Pack contents
+    source/                       # Pack contents (AGENTS.md + pack.toml)
     rendered/{claude,codex,gemini,generic}/
     growth.md                     # Local-only, append-only
+  orchestrator/                   # Per-project automate mode + audit state
 ```
 
 Project ID is `sha256(realpath(project_root))`. Your project tree is never written to.
 
 ## Pack format
 
-Each persona distributes as a signed pack:
+Each persona distributes as a signed pack -- a tarball of `AGENTS.md` plus `pack.toml`:
 
 ```toml
 # pack.toml
 schema_version = 1
 name = "cryptographic"
-version = "0.3.1"
+version = "0.1.0"
 author_handle = "ghost-frame"
 author_pubkey = "ed25519:<hex>"
-license = "AGPL-3.0"
+license = "Elastic-2.0"
 
 [capability_manifest]
 required_tools = ["Read", "Edit", "Bash"]
