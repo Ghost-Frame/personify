@@ -4,6 +4,7 @@ on:
     branches: ['**']
     tags: ['**']
   delete:
+  workflow_dispatch:
 
 jobs:
   mirror:
