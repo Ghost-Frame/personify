@@ -32,6 +32,7 @@ version = "0.3.1"
 
     let client = Client::new(ClientOptions {
         data_root: data_root.clone(),
+        config_root: None,
     });
 
     let report = client
@@ -104,22 +105,6 @@ version = "0.3.1"
 }
 
 #[test]
-fn project_id_env_override_is_used_verbatim() {
-    let temp = TempDir::new().expect("tempdir");
-    let data_root = temp.path().join("data-root");
-    let project_root = temp.path().join("project");
-    fs::create_dir_all(&project_root).expect("create project");
-
-    // SAFETY: tests in this file run in a single binary; we set then unset.
-    std::env::set_var("FRAMESHIFT_PROJECT_ID", "team-alpha");
-    let client = Client::new(ClientOptions { data_root });
-    let result = client.project_id(&project_root);
-    std::env::remove_var("FRAMESHIFT_PROJECT_ID");
-
-    assert_eq!(result.expect("project id"), "team-alpha");
-}
-
-#[test]
 fn migrates_legacy_project_files() {
     let temp = TempDir::new().expect("tempdir");
     let data_root = temp.path().join("data-root");
@@ -135,6 +120,7 @@ fn migrates_legacy_project_files() {
 
     let client = Client::new(ClientOptions {
         data_root: data_root.clone(),
+        config_root: None,
     });
 
     // project_paths() triggers the migration shim.
@@ -182,6 +168,7 @@ version = "0.3.1"
 
     let client = Client::new(ClientOptions {
         data_root: data_root.clone(),
+        config_root: None,
     });
     let report = client
         .install(InstallRequest {

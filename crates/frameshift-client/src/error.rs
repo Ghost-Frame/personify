@@ -59,4 +59,19 @@ pub enum ClientError {
 
     #[error(transparent)]
     Pack(#[from] frameshift_pack::PackError),
+
+    /// The rendered output file for the requested persona and target does not exist.
+    #[error("rendered persona '{persona}' for target '{target}' not found at {path}")]
+    RenderedPersonaNotFound {
+        /// The persona name.
+        persona: String,
+        /// The render target (e.g. "claude", "codex").
+        target: String,
+        /// The expected path that was missing.
+        path: std::path::PathBuf,
+    },
+
+    /// The requested render target is not a known target.
+    #[error("unknown render target '{0}'; known targets: claude, codex, gemini, generic")]
+    UnknownRenderTarget(String),
 }

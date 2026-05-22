@@ -11,7 +11,7 @@ Personas are not instruction lists. They are complete behavioral identities -- t
 ## What this repo contains
 
 - `crates/` -- Rust workspace (20 crates): CLI, client engine, pack tooling, composition, conformance, catalog, memory, vault, object storage, HTTP server
-- `personas/` -- pack manifests for the persona library (see the [deep product writeup](personas/README.md))
+- `personas/` -- pack manifests for the persona library
 
 ## How it works
 
@@ -131,7 +131,3 @@ Elastic License 2.0. See [LICENSE](LICENSE) for details.
 The Elastic License 2.0 prohibits offering FrameShift to third parties as a
 hosted or managed service. To sell, host, or distribute FrameShift on your own
 platform, contact us for a commercial license: support@syntheos.dev.
-
-## Further reading
-
-- [Persona deep dive and product writeup](personas/README.md)

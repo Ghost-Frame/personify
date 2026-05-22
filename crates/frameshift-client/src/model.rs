@@ -84,9 +84,15 @@ pub struct InstallRequest {
     pub source: InstallSource,
 }
 
+/// Options for constructing a Frameshift `Client`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientOptions {
+    /// Root of the Frameshift data directory (e.g. ~/.local/share/frameshift).
     pub data_root: PathBuf,
+    /// Root of the XDG config directory (e.g. ~/.config).
+    /// When set, the engine looks for `frameshift/infrastructure.md`
+    /// under this path and composes it into rendered output.
+    pub config_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

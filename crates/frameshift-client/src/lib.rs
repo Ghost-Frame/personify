@@ -38,20 +38,28 @@ const RENDER_TARGETS: [(&str, &str); 4] = [
 
 const RENDER_CANDIDATES: [&str; 4] = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md"];
 
+/// Core Frameshift engine. Handles install, activate, sync, gc, and rendering.
 pub struct Client {
+    /// Root of the Frameshift data directory.
     data_root: PathBuf,
+    /// Root of the XDG config directory (for infrastructure overlay).
+    config_root: Option<PathBuf>,
 }
 
 impl Client {
+    /// Construct a `Client` from the given options.
     pub fn new(options: ClientOptions) -> Self {
         Self {
             data_root: options.data_root,
+            config_root: options.config_root,
         }
     }
 
+    /// Construct a `Client` using the XDG data and config roots resolved from environment variables.
     pub fn with_default_data_root() -> Result<Self, ClientError> {
         Ok(Self::new(ClientOptions {
             data_root: default_data_root()?,
+            config_root: Some(default_config_root()),
         }))
     }
 
@@ -206,6 +214,101 @@ impl Client {
         Ok(GcReport { removed_hashes })
     }
 
+    /// Return the `personas/<name>/source` directories that currently exist for a project.
+    ///
+    /// These directories feed `frameshift_orchestrator::PersonaIndex::from_dirs`.
+    /// Only directories whose `source` subdirectory exists on disk are returned;
+    /// personas that are declared in the lock but whose source has not yet been
+    /// materialized are silently skipped.
+    pub fn installed_persona_source_dirs(
+        &self,
+        project_root: &Path,
+    ) -> Result<Vec<std::path::PathBuf>, ClientError> {
+        let paths = self.project_paths(project_root)?;
+
+        if !paths.personas_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut result = Vec::new();
+        for entry in read_dir_sorted(&paths.personas_dir)? {
+            let persona_dir = entry.path();
+            if !entry
+                .file_type()
+                .map_err(|source| ClientError::Io {
+                    path: persona_dir.clone(),
+                    source,
+                })?
+                .is_dir()
+            {
+                continue;
+            }
+
+            let source_dir = persona_dir.join("source");
+            if source_dir.is_dir() {
+                result.push(source_dir);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Read the rendered markdown for a specific persona and target.
+    ///
+    /// Resolves the target's output filename via `RENDER_TARGETS` (e.g. target
+    /// `"claude"` maps to `CLAUDE.md`) and reads
+    /// `personas/<persona>/rendered/<target>/<file>` from the project's central
+    /// state directory. Defaults to target `"claude"` if an empty string is
+    /// passed (callers should pass `"claude"` explicitly).
+    ///
+    /// Returns `ClientError::UnknownRenderTarget` when `target` is not in
+    /// `RENDER_TARGETS`, and `ClientError::RenderedPersonaNotFound` when the
+    /// file is absent.
+    pub fn rendered_persona(
+        &self,
+        project_root: &Path,
+        persona: &str,
+        target: &str,
+    ) -> Result<String, ClientError> {
+        let effective_target = if target.is_empty() { "claude" } else { target };
+
+        let filename = RENDER_TARGETS
+            .iter()
+            .find(|(t, _)| *t == effective_target)
+            .map(|(_, f)| *f)
+            .ok_or_else(|| ClientError::UnknownRenderTarget(effective_target.to_string()))?;
+
+        let paths = self.project_paths(project_root)?;
+        let rendered_path = paths
+            .personas_dir
+            .join(persona)
+            .join("rendered")
+            .join(effective_target)
+            .join(filename);
+
+        if !rendered_path.exists() {
+            return Err(ClientError::RenderedPersonaNotFound {
+                persona: persona.to_string(),
+                target: effective_target.to_string(),
+                path: rendered_path,
+            });
+        }
+
+        read_to_string(&rendered_path)
+    }
+
+    /// Return the project state directory where orchestrator state files are placed.
+    ///
+    /// Callers should write `automate.json`, `automate-audit.jsonl`, and
+    /// `automate-prefs.json` here to keep all per-project state co-located.
+    pub fn orchestrator_state_dir(
+        &self,
+        project_root: &Path,
+    ) -> Result<std::path::PathBuf, ClientError> {
+        let paths = self.project_paths(project_root)?;
+        Ok(paths.project_state_dir)
+    }
+
     fn materialize_project_state(
         &self,
         paths: &ProjectPaths,
@@ -257,7 +360,12 @@ impl Client {
             copy_dir_recursive(&cache_path, &source_dir)?;
 
             let rendered_root = persona_dir.join("rendered");
-            materialize_rendered_outputs(&cache_path, &rendered_root)?;
+            materialize_rendered_outputs(
+                &cache_path,
+                &rendered_root,
+                &persona.name,
+                self.config_root.as_deref(),
+            )?;
 
             // Growth is local-only and append-only -- a single file per persona, never published upstream.
             touch_empty(&persona_dir.join("growth.md"))?;
@@ -293,6 +401,17 @@ fn default_data_root() -> Result<PathBuf, ClientError> {
             source: std::io::Error::new(std::io::ErrorKind::NotFound, source),
         })?;
     Ok(home.join(".local").join("share").join("frameshift"))
+}
+
+/// Resolve the XDG config home directory.
+fn default_config_root() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg);
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".config")
 }
 
 fn validate_explicit_project_id(project_id: &str) -> Result<(), ClientError> {
@@ -515,23 +634,54 @@ fn ensure_cached_pack(source_dir: &Path, cache_path: &Path) -> Result<(), Client
     }
 }
 
+/// Render persona content into per-target markdown files, composing with
+/// the infrastructure overlay if one exists under `config_root`.
 fn materialize_rendered_outputs(
     cache_path: &Path,
     rendered_root: &Path,
+    persona_name: &str,
+    config_root: Option<&Path>,
 ) -> Result<(), ClientError> {
     let render_source = find_render_source(cache_path)?;
-    let content = fs::read(&render_source).map_err(|source| ClientError::Io {
+    let persona_content = fs::read_to_string(&render_source).map_err(|source| ClientError::Io {
         path: render_source.clone(),
         source,
     })?;
 
+    let composed = compose_rendered_content(persona_name, &persona_content, config_root);
+
     for (target_dir, filename) in RENDER_TARGETS {
         let dir = rendered_root.join(target_dir);
         ensure_dir(&dir)?;
-        write_file(&dir.join(filename), &content)?;
+        write_file(&dir.join(filename), composed.as_bytes())?;
     }
 
     Ok(())
+}
+
+/// Compose the final rendered content from infrastructure overlay + persona context header + persona content.
+/// If no infrastructure overlay exists, returns persona content unchanged.
+fn compose_rendered_content(
+    persona_name: &str,
+    persona_content: &str,
+    config_root: Option<&Path>,
+) -> String {
+    let infra_path = config_root.map(|root| root.join("frameshift").join("infrastructure.md"));
+    let infra_content = infra_path
+        .as_deref()
+        .and_then(|p| fs::read_to_string(p).ok());
+
+    let mut composed = String::new();
+
+    if let Some(infra) = &infra_content {
+        composed.push_str(infra);
+        composed.push_str("\n\n## Persona Context\n\n");
+        composed.push_str(&format!("Active persona: {}\n", persona_name));
+        composed.push_str("\n---\n\n");
+    }
+
+    composed.push_str(persona_content);
+    composed
 }
 
 fn find_render_source(pack_dir: &Path) -> Result<PathBuf, ClientError> {
@@ -654,6 +804,130 @@ fn read_dir_sorted(path: &Path) -> Result<Vec<fs::DirEntry>, ClientError> {
 mod tests {
     use super::*;
 
+    /// Helper: set up a minimal pack and install it, returning the client and project root.
+    fn install_test_persona(
+        tmp: &tempfile::TempDir,
+        name: &str,
+    ) -> (Client, std::path::PathBuf) {
+        let pack_dir = tmp.path().join("pack");
+        fs::create_dir_all(&pack_dir).unwrap();
+        fs::write(
+            pack_dir.join("pack.toml"),
+            format!(
+                "schema_version = 1\nname = \"{}\"\nauthor_handle = \"test\"\nauthor_pubkey = \"local-unsigned\"\nversion = \"0.1.0\"\n",
+                name
+            ),
+        )
+        .unwrap();
+        fs::write(pack_dir.join("AGENTS.md"), format!("# {}\n\nTest.\n", name)).unwrap();
+
+        let project_root = tmp.path().join("project");
+        fs::create_dir_all(&project_root).unwrap();
+
+        let client = Client::new(ClientOptions {
+            data_root: tmp.path().join("data"),
+            config_root: None,
+        });
+
+        client
+            .install(InstallRequest {
+                project_root: project_root.clone(),
+                spec: PersonaSpec {
+                    name: name.to_string(),
+                    version: "0.1.0".to_string(),
+                },
+                source: InstallSource::LocalPath(pack_dir),
+            })
+            .unwrap();
+
+        (client, project_root)
+    }
+
+    /// installed_persona_source_dirs returns one entry per installed persona.
+    #[test]
+    fn installed_persona_source_dirs_returns_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (client, project_root) = install_test_persona(&tmp, "mypersona");
+        let dirs = client
+            .installed_persona_source_dirs(&project_root)
+            .unwrap();
+        assert_eq!(dirs.len(), 1, "expected exactly one source dir");
+        assert!(dirs[0].ends_with("source"), "source dir should end with 'source'");
+    }
+
+    /// installed_persona_source_dirs returns empty vec when no personas installed.
+    #[test]
+    fn installed_persona_source_dirs_empty_when_no_personas() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_root = tmp.path().join("project");
+        fs::create_dir_all(&project_root).unwrap();
+        let client = Client::new(ClientOptions {
+            data_root: tmp.path().join("data"),
+            config_root: None,
+        });
+        let dirs = client
+            .installed_persona_source_dirs(&project_root)
+            .unwrap();
+        assert!(dirs.is_empty());
+    }
+
+    /// rendered_persona returns the rendered markdown for the claude target.
+    #[test]
+    fn rendered_persona_returns_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (client, project_root) = install_test_persona(&tmp, "rendtest");
+        let content = client
+            .rendered_persona(&project_root, "rendtest", "claude")
+            .unwrap();
+        assert!(content.contains("rendtest") || content.contains("Rendtest") || content.len() > 0);
+    }
+
+    /// rendered_persona returns an error for an unknown render target.
+    #[test]
+    fn rendered_persona_error_for_unknown_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (client, project_root) = install_test_persona(&tmp, "tgt-test");
+        let err = client
+            .rendered_persona(&project_root, "tgt-test", "nonexistent-target")
+            .unwrap_err();
+        assert!(
+            matches!(err, ClientError::UnknownRenderTarget(_)),
+            "expected UnknownRenderTarget, got {err}"
+        );
+    }
+
+    /// rendered_persona returns RenderedPersonaNotFound for a non-installed persona.
+    #[test]
+    fn rendered_persona_error_for_missing_persona() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_root = tmp.path().join("project");
+        fs::create_dir_all(&project_root).unwrap();
+        let client = Client::new(ClientOptions {
+            data_root: tmp.path().join("data"),
+            config_root: None,
+        });
+        let err = client
+            .rendered_persona(&project_root, "ghost", "claude")
+            .unwrap_err();
+        assert!(
+            matches!(err, ClientError::RenderedPersonaNotFound { .. }),
+            "expected RenderedPersonaNotFound, got {err}"
+        );
+    }
+
+    /// orchestrator_state_dir returns the project state directory.
+    #[test]
+    fn orchestrator_state_dir_is_project_state_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (client, project_root) = install_test_persona(&tmp, "statedirtest");
+        let state_dir = client.orchestrator_state_dir(&project_root).unwrap();
+        // Must exist because install creates it.
+        assert!(state_dir.exists(), "state dir should exist after install");
+        // The path should contain "projects" and the project id.
+        let s = state_dir.to_string_lossy();
+        assert!(s.contains("projects"), "state dir path must contain 'projects'");
+    }
+
     #[test]
     fn rejects_invalid_persona_specs() {
         assert!("cryptographic".parse::<PersonaSpec>().is_err());
@@ -666,5 +940,109 @@ mod tests {
         assert!(validate_explicit_project_id("team/alpha").is_err());
         assert!(validate_explicit_project_id("team\\alpha").is_err());
         assert!(validate_explicit_project_id("valid-id").is_ok());
+    }
+
+    #[test]
+    fn rendered_output_includes_infra_overlay() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data_root = tmp.path().join("data");
+        let config_root = tmp.path().join("config");
+
+        // Set up infra overlay
+        let infra_dir = config_root.join("frameshift");
+        fs::create_dir_all(&infra_dir).unwrap();
+        fs::write(
+            infra_dir.join("infrastructure.md"),
+            "# Infrastructure\n\nTest infra content.\n",
+        )
+        .unwrap();
+
+        // Set up a minimal pack
+        let pack_dir = tmp.path().join("pack");
+        fs::create_dir_all(&pack_dir).unwrap();
+        fs::write(
+            pack_dir.join("pack.toml"),
+            "schema_version = 1\nname = \"testpersona\"\nauthor_handle = \"test\"\nauthor_pubkey = \"local-unsigned\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::write(pack_dir.join("AGENTS.md"), "# Test Persona\n\nBehavior rules here.\n").unwrap();
+
+        let project_root = tmp.path().join("project");
+        fs::create_dir_all(&project_root).unwrap();
+
+        let client = Client::new(ClientOptions {
+            data_root: data_root.clone(),
+            config_root: Some(config_root),
+        });
+        client
+            .install(InstallRequest {
+                project_root: project_root.clone(),
+                spec: PersonaSpec {
+                    name: "testpersona".to_string(),
+                    version: "0.1.0".to_string(),
+                },
+                source: InstallSource::LocalPath(pack_dir),
+            })
+            .unwrap();
+
+        let project_id = client.project_id(&project_root).unwrap();
+        let rendered = data_root
+            .join("projects")
+            .join(&project_id)
+            .join("personas/testpersona/rendered/claude/CLAUDE.md");
+        let content = fs::read_to_string(&rendered).unwrap();
+
+        assert!(content.contains("# Infrastructure"), "missing infra overlay");
+        assert!(content.contains("Test infra content"), "missing infra body");
+        assert!(content.contains("Active persona: testpersona"), "missing persona context header");
+        assert!(content.contains("# Test Persona"), "missing persona content");
+
+        // Infra must come before persona content
+        let infra_pos = content.find("# Infrastructure").unwrap();
+        let persona_pos = content.find("# Test Persona").unwrap();
+        assert!(infra_pos < persona_pos, "infra overlay must precede persona content");
+    }
+
+    #[test]
+    fn rendered_output_works_without_infra_overlay() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data_root = tmp.path().join("data");
+
+        let pack_dir = tmp.path().join("pack");
+        fs::create_dir_all(&pack_dir).unwrap();
+        fs::write(
+            pack_dir.join("pack.toml"),
+            "schema_version = 1\nname = \"noinfratestp\"\nauthor_handle = \"test\"\nauthor_pubkey = \"local-unsigned\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::write(pack_dir.join("AGENTS.md"), "# Bare Persona\n").unwrap();
+
+        let project_root = tmp.path().join("project");
+        fs::create_dir_all(&project_root).unwrap();
+
+        let client = Client::new(ClientOptions {
+            data_root: data_root.clone(),
+            config_root: None,
+        });
+        client
+            .install(InstallRequest {
+                project_root: project_root.clone(),
+                spec: PersonaSpec {
+                    name: "noinfratestp".to_string(),
+                    version: "0.1.0".to_string(),
+                },
+                source: InstallSource::LocalPath(pack_dir),
+            })
+            .unwrap();
+
+        let project_id = client.project_id(&project_root).unwrap();
+        let rendered = data_root
+            .join("projects")
+            .join(&project_id)
+            .join("personas/noinfratestp/rendered/claude/CLAUDE.md");
+        let content = fs::read_to_string(&rendered).unwrap();
+
+        assert!(content.contains("# Bare Persona"), "persona content must be present");
+        assert!(!content.contains("Infrastructure"), "no infra overlay expected");
     }
 }

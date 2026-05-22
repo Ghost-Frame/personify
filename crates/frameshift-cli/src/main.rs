@@ -1,109 +1,346 @@
-use frameshift_client::{Client, InstallRequest, InstallSource, PersonaSpec};
+//! `frameshift` CLI entry point.
+//!
+//! Dispatches to subcommand modules via clap derive. Existing M0 subcommands
+//! (`install`, `activate`, `sync`, `gc`, `project-id`) are preserved verbatim.
+//! New M1 subcommands (`rule`, `skill`, `diff`, `render`, `migrate`) are
+//! wired here. M2 subcommands (`verify`, `publish`) are fully implemented.
+
+mod cmd;
+mod util;
+
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use frameshift_client::{Client, InstallRequest, InstallSource, PersonaSpec};
+
+use cmd::automate::AutomateArgs;
+use cmd::diff::DiffArgs;
+use cmd::grow::GrowArgs;
+use cmd::migrate::MigrateArgs;
+use cmd::render::RenderArgs;
+use cmd::rule::{RuleArgs, RuleCommand};
+use cmd::select::SelectArgs;
+use cmd::skill::{SkillArgs, SkillCommand};
+use cmd::use_persona::UseArgs;
+use cmd::verify::VerifyArgs;
+use cmd::publish::PublishArgs;
+use util::CliError;
+
+/// Frameshift persona engine CLI.
+#[derive(Debug, Parser)]
+#[command(name = "frameshift", version, about = "Frameshift persona engine CLI")]
+struct Cli {
+    /// The subcommand to execute.
+    #[command(subcommand)]
+    command: Command,
+}
+
+/// All top-level subcommands.
+#[derive(Debug, Subcommand)]
+enum Command {
+    // ------------------------------------------------------------------
+    // M0 subcommands -- original install/activate/sync/gc/project-id
+    // ------------------------------------------------------------------
+    /// Install a persona pack into the central store.
+    Install {
+        /// Persona spec in `<name>@<version>` format.
+        spec: String,
+        /// Install from a local pack directory instead of the registry.
+        #[arg(long, value_name = "PATH")]
+        from_path: Option<PathBuf>,
+    },
+
+    /// Activate an installed persona for this project.
+    Activate {
+        /// Name of the persona to activate.
+        persona: String,
+    },
+
+    /// Sync the central store with the current lockfile.
+    Sync,
+
+    /// Remove unreferenced entries from the central cache.
+    Gc,
+
+    /// Print the project ID for the current directory.
+    #[command(name = "project-id")]
+    ProjectId,
+
+    // ------------------------------------------------------------------
+    // M1 subcommands -- new persona source manipulation
+    // ------------------------------------------------------------------
+    /// Add or remove a rule in a persona source.
+    Rule(RuleArgs),
+
+    /// Add or remove a skill in a persona source.
+    Skill(SkillArgs),
+
+    /// Show the semantic diff between two personas.
+    Diff(DiffArgs),
+
+    /// Render a persona source to markdown.
+    Render(RenderArgs),
+
+    /// Migrate legacy project files to the central store.
+    Migrate(MigrateArgs),
+
+    /// Append to a persona's local growth log.
+    Grow(GrowArgs),
+
+    // ------------------------------------------------------------------
+    // M2 -- verify and publish
+    // ------------------------------------------------------------------
+    /// Verify a persona source against conformance rules.
+    Verify(VerifyArgs),
+
+    /// Publish a persona pack to a directory or registry.
+    Publish(PublishArgs),
+
+    // ------------------------------------------------------------------
+    // M3 -- orchestrator: select, use, automate
+    // ------------------------------------------------------------------
+    /// Rank installed personas for the current project context (read-only).
+    Select(SelectArgs),
+
+    /// Activate a persona and print its rendered output.
+    Use(UseArgs),
+
+    /// Manage automate-mode state (on/off/status/lock/unlock).
+    Automate(AutomateArgs),
+}
+
+/// Typed run-level error that carries an exit code alongside a message.
+///
+/// This lets `main` choose the right exit code (1 for general errors, 2 for
+/// not-implemented stubs) without string-matching on the error message.
+#[derive(Debug)]
+enum RunError {
+    /// General failure -- prints the message and exits 1.
+    General(String),
+    /// Feature not implemented -- prints the message and exits 2.
+    NotImplemented(String),
+}
+
+impl std::fmt::Display for RunError {
+    /// Format the run error for printing to stderr.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RunError::General(msg) | RunError::NotImplemented(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl From<CliError> for RunError {
+    /// Convert a `CliError` into a `RunError`, preserving the exit-code
+    /// distinction for `NotImplemented` vs all other errors.
+    fn from(e: CliError) -> Self {
+        if matches!(e, CliError::NotImplemented(_)) {
+            RunError::NotImplemented(e.to_string())
+        } else {
+            RunError::General(e.to_string())
+        }
+    }
+}
+
+/// Top-level entry point. Parses args and delegates to `run()`.
+///
+/// Exit codes:
+/// - 0: success
+/// - 1: general error (I/O, parse, patch conflict, etc.)
+/// - 2: feature not yet implemented (M2+ stubs)
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("{error}");
+        Err(RunError::NotImplemented(msg)) => {
+            eprintln!("{msg}");
+            ExitCode::from(2)
+        }
+        Err(RunError::General(msg)) => {
+            eprintln!("{msg}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn run() -> Result<(), String> {
-    let mut args = std::env::args().skip(1);
-    let Some(command) = args.next() else {
-        return Err(usage().to_string());
-    };
+/// Build a `Client` using the default central data root.
+///
+/// Fails with a `RunError::General` if the data root cannot be determined
+/// (e.g., `$HOME` is not set).
+fn make_client() -> Result<Client, RunError> {
+    Client::with_default_data_root().map_err(|e| RunError::General(e.to_string()))
+}
 
-    let client = Client::with_default_data_root().map_err(|error| error.to_string())?;
+/// Execute the parsed subcommand.
+///
+/// All M0 subcommands share the pattern: build a client, call the appropriate
+/// method, print a short confirmation message. M1 subcommands delegate to
+/// their `cmd::*` modules. M2 subcommands (`verify`, `publish`) delegate to
+/// their respective fully-implemented modules.
+fn run() -> Result<(), RunError> {
+    let cli = Cli::parse();
 
-    match command.as_str() {
-        "install" => {
-            let spec = args
-                .next()
-                .ok_or_else(|| "missing required argument: <name@version>".to_string())?
+    match cli.command {
+        // ------------------------------------------------------------------
+        // M0 -- install
+        // ------------------------------------------------------------------
+        Command::Install { spec, from_path } => {
+            let client = make_client()?;
+            let spec = spec
                 .parse::<PersonaSpec>()
-                .map_err(|error| error.to_string())?;
-            let mut source = InstallSource::Registry;
-
-            while let Some(flag) = args.next() {
-                if flag == "--from-path" {
-                    let path = args
-                        .next()
-                        .ok_or_else(|| "missing value for --from-path".to_string())?;
-                    source = InstallSource::LocalPath(PathBuf::from(path));
-                    continue;
-                }
-
-                return Err(format!("unknown install argument: {flag}"));
-            }
-
+                .map_err(|e| RunError::General(e.to_string()))?;
+            let source = match from_path {
+                Some(path) => InstallSource::LocalPath(path),
+                None => InstallSource::Registry,
+            };
             let report = client
                 .install(InstallRequest {
                     project_root: current_dir()?,
                     spec,
                     source,
                 })
-                .map_err(|error| error.to_string())?;
+                .map_err(|e| RunError::General(e.to_string()))?;
             println!(
                 "installed {}@{} ({})",
                 report.persona.name, report.persona.version, report.persona.hash
             );
             Ok(())
         }
-        "activate" => {
-            let persona = args
-                .next()
-                .ok_or_else(|| "missing required argument: <persona-name>".to_string())?;
-            ensure_no_extra_args(args)?;
+
+        // ------------------------------------------------------------------
+        // M0 -- activate
+        // ------------------------------------------------------------------
+        Command::Activate { persona } => {
+            let client = make_client()?;
             client
                 .activate(&current_dir()?, &persona)
-                .map_err(|error| error.to_string())?;
+                .map_err(|e| RunError::General(e.to_string()))?;
             println!("activated {persona}");
             Ok(())
         }
-        "sync" => {
-            ensure_no_extra_args(args)?;
+
+        // ------------------------------------------------------------------
+        // M0 -- sync
+        // ------------------------------------------------------------------
+        Command::Sync => {
+            let client = make_client()?;
             let report = client
                 .sync(&current_dir()?)
-                .map_err(|error| error.to_string())?;
+                .map_err(|e| RunError::General(e.to_string()))?;
             println!("synced {} persona(s)", report.personas.len());
             Ok(())
         }
-        "gc" => {
-            ensure_no_extra_args(args)?;
-            let report = client.gc().map_err(|error| error.to_string())?;
+
+        // ------------------------------------------------------------------
+        // M0 -- gc
+        // ------------------------------------------------------------------
+        Command::Gc => {
+            let client = make_client()?;
+            let report = client.gc().map_err(|e| RunError::General(e.to_string()))?;
             println!("removed {} cache entries", report.removed_hashes.len());
             Ok(())
         }
-        "project-id" => {
-            ensure_no_extra_args(args)?;
+
+        // ------------------------------------------------------------------
+        // M0 -- project-id
+        // ------------------------------------------------------------------
+        Command::ProjectId => {
+            let client = make_client()?;
             println!(
                 "{}",
                 client
                     .project_id(&current_dir()?)
-                    .map_err(|error| error.to_string())?
+                    .map_err(|e| RunError::General(e.to_string()))?
             );
             Ok(())
         }
-        _ => Err(usage().to_string()),
+
+        // ------------------------------------------------------------------
+        // M1 -- rule add / remove
+        // ------------------------------------------------------------------
+        Command::Rule(rule_args) => {
+            let client = make_client()?;
+            match rule_args.command {
+                RuleCommand::Add(args) => cmd::rule::run_add(&client, args).map_err(RunError::from),
+                RuleCommand::Remove(args) => {
+                    cmd::rule::run_remove(&client, args).map_err(RunError::from)
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // M1 -- skill add / remove
+        // ------------------------------------------------------------------
+        Command::Skill(skill_args) => {
+            let client = make_client()?;
+            match skill_args.command {
+                SkillCommand::Add(args) => {
+                    cmd::skill::run_add(&client, args).map_err(RunError::from)
+                }
+                SkillCommand::Remove(args) => {
+                    cmd::skill::run_remove(&client, args).map_err(RunError::from)
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // M1 -- diff
+        // ------------------------------------------------------------------
+        Command::Diff(args) => {
+            let client = make_client()?;
+            cmd::diff::run_diff(&client, args).map_err(RunError::from)
+        }
+
+        // ------------------------------------------------------------------
+        // M1 -- render
+        // ------------------------------------------------------------------
+        Command::Render(args) => {
+            let client = make_client()?;
+            cmd::render::run_render(&client, args).map_err(RunError::from)
+        }
+
+        // ------------------------------------------------------------------
+        // M1 -- migrate
+        // ------------------------------------------------------------------
+        Command::Migrate(args) => {
+            let client = make_client()?;
+            cmd::migrate::run_migrate(&client, args).map_err(RunError::from)
+        }
+
+        // ------------------------------------------------------------------
+        // M2 -- grow
+        // ------------------------------------------------------------------
+        Command::Grow(args) => cmd::grow::run(args).map_err(RunError::from),
+
+        // ------------------------------------------------------------------
+        // M2 -- verify and publish
+        // ------------------------------------------------------------------
+        Command::Verify(args) => cmd::verify::run_verify(args).map_err(RunError::from),
+        Command::Publish(args) => cmd::publish::run_publish(args).map_err(RunError::from),
+
+        // ------------------------------------------------------------------
+        // M3 -- orchestrator: select, use, automate
+        // ------------------------------------------------------------------
+        Command::Select(args) => {
+            let client = make_client()?;
+            cmd::select::run_select(&client, args).map_err(RunError::from)
+        }
+
+        Command::Use(args) => {
+            let client = make_client()?;
+            cmd::use_persona::run_use(&client, args).map_err(RunError::from)
+        }
+
+        Command::Automate(args) => {
+            let client = make_client()?;
+            cmd::automate::run_automate(&client, args).map_err(RunError::from)
+        }
     }
 }
 
-fn current_dir() -> Result<PathBuf, String> {
-    std::env::current_dir().map_err(|error| error.to_string())
-}
-
-fn ensure_no_extra_args(mut args: impl Iterator<Item = String>) -> Result<(), String> {
-    if let Some(extra) = args.next() {
-        return Err(format!("unexpected argument: {extra}"));
-    }
-    Ok(())
-}
-
-fn usage() -> &'static str {
-    "usage: frameshift <install|activate|sync|gc|project-id>\n       frameshift install <name@version> [--from-path <local-pack-dir>]"
+/// Return the current working directory as a `PathBuf`.
+///
+/// Maps the `io::Error` to a `RunError::General` so callers can use `?` in `run()`.
+fn current_dir() -> Result<PathBuf, RunError> {
+    std::env::current_dir().map_err(|e| RunError::General(e.to_string()))
 }

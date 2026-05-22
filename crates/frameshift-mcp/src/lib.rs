@@ -1,0 +1,11 @@
+//! Minimal MCP stdio server for Frameshift.
+//!
+//! Exposes the protocol, tool dispatch, and error types as a library so
+//! that unit tests can exercise them without spawning a full binary.
+
+/// MCP server error types.
+pub mod error;
+/// JSON-RPC 2.0 protocol types and response helpers.
+pub mod protocol;
+/// Tool definitions and dispatch logic.
+pub mod tools;

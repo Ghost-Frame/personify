@@ -24,4 +24,12 @@ pub enum SourceError {
 
     #[error("invalid layer '{0}' -- expected one of L1, L2, L3")]
     InvalidLayer(String),
+
+    /// Returned when a file or its deserialized contents exceed the limits
+    /// configured in `LoadOptions`.
+    #[error("content limit exceeded: {detail}")]
+    ContentLimitExceeded {
+        /// Human-readable description of which limit was exceeded and by how much.
+        detail: String,
+    },
 }

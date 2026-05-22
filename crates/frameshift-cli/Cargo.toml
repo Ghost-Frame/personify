@@ -12,3 +12,14 @@ path = "src/main.rs"
 
 [dependencies]
 frameshift-client = { path = "../frameshift-client" }
+frameshift-source = { path = "../frameshift-source" }
+frameshift-growth = { path = "../frameshift-growth" }
+frameshift-conformance = { path = "../frameshift-conformance" }
+frameshift-orchestrator = { path = "../frameshift-orchestrator" }
+clap = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
