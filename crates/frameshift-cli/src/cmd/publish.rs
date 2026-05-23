@@ -84,6 +84,7 @@ pub fn run_publish(args: PublishArgs) -> Result<(), CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use frameshift_source::PersonaSource;
     use std::fs;
 
     /// Write a minimal persona.toml to a temp directory so PersonaSource can
