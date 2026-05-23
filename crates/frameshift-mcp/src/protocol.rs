@@ -83,6 +83,74 @@ pub struct ToolContent {
     pub text: String,
 }
 
+/// Definition of a single argument accepted by an MCP prompt.
+///
+/// Mirrors the MCP spec's prompt argument schema: each argument has a name,
+/// optional description for client UIs, and a required flag.
+#[derive(Debug, Serialize)]
+pub struct PromptArgDef {
+    /// Argument name as it will appear in `prompts/get` params.
+    pub name: String,
+    /// Human-readable description shown by the client.
+    pub description: String,
+    /// Whether the argument is required.
+    pub required: bool,
+}
+
+/// MCP prompt definition returned from `prompts/list`.
+///
+/// Clients render these as user-invocable prompts (in Claude Code they
+/// surface as `/mcp__servername__name` slash commands; in Gemini CLI as
+/// `/name [args]` slash commands).
+#[derive(Debug, Serialize)]
+pub struct PromptDef {
+    /// Unique prompt name used when calling via `prompts/get`.
+    pub name: String,
+    /// Human-readable description of what the prompt produces.
+    pub description: String,
+    /// Ordered list of argument definitions; empty when the prompt takes no arguments.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<PromptArgDef>,
+}
+
+/// Result of a `prompts/get` invocation.
+///
+/// MCP clients append `messages` to the conversation. Each message has a
+/// `role` ("user" | "assistant" | "system") and a content block.
+#[derive(Debug, Serialize)]
+pub struct PromptResult {
+    /// Optional description shown to the user; clients may surface this in UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Ordered sequence of messages the client will insert into the conversation.
+    pub messages: Vec<PromptMessage>,
+}
+
+/// A single message in a `PromptResult`.
+///
+/// Frameshift's prompts emit `"user"` role messages so the agent receives the
+/// content as if the user had pasted it -- this matches the semantics of a
+/// rendered persona that should steer subsequent turns.
+#[derive(Debug, Serialize)]
+pub struct PromptMessage {
+    /// Role of the message author: "user", "assistant", or "system".
+    pub role: String,
+    /// Content block for this message.
+    pub content: PromptContent,
+}
+
+/// Content block within a `PromptMessage`.
+///
+/// Currently always `type: "text"`; future versions may add resource refs.
+#[derive(Debug, Serialize)]
+pub struct PromptContent {
+    /// Content block type -- always "text" for this server.
+    #[serde(rename = "type")]
+    pub content_type: String,
+    /// The text content of this block.
+    pub text: String,
+}
+
 /// Construct a successful JSON-RPC response with the given id and result value.
 pub fn success_response(id: Option<serde_json::Value>, result: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse {

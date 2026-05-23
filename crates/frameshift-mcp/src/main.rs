@@ -3,7 +3,7 @@
 
 use frameshift_client::Client;
 use frameshift_mcp::protocol::{error_response, success_response, JsonRpcMessage, JsonRpcResponse};
-use frameshift_mcp::tools;
+use frameshift_mcp::{prompts, tools};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 /// Main entry point. Initializes tracing, creates the client, then
@@ -53,14 +53,17 @@ fn handle_message(line: &str, client: &Client) -> Option<JsonRpcResponse> {
 
     match msg.method.as_str() {
         "initialize" => {
+            // Advertise both tools and prompts; clients use these to decide
+            // which surfaces (tools/list, prompts/list) to query and render.
             let result = serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "serverInfo": {
                     "name": "frameshift-mcp",
-                    "version": "0.1.0"
+                    "version": "0.9.9"
                 },
                 "capabilities": {
-                    "tools": {}
+                    "tools": {},
+                    "prompts": {}
                 }
             });
             Some(success_response(id, result))
@@ -82,6 +85,26 @@ fn handle_message(line: &str, client: &Client) -> Option<JsonRpcResponse> {
                 id,
                 serde_json::to_value(tool_result).unwrap_or_default(),
             ))
+        }
+        "prompts/list" => {
+            let defs = prompts::prompt_definitions();
+            let result = serde_json::json!({"prompts": defs});
+            Some(success_response(id, result))
+        }
+        "prompts/get" => {
+            let params = msg.params.unwrap_or(serde_json::Value::Null);
+            let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let arguments = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+            match prompts::call_prompt(name, &arguments, client) {
+                Ok(result) => Some(success_response(
+                    id,
+                    serde_json::to_value(result).unwrap_or_default(),
+                )),
+                Err(message) => Some(error_response(id, -32602, message)),
+            }
         }
         _ => Some(error_response(
             id,
@@ -199,6 +222,97 @@ mod tests {
         let response = handle_message("not json {{{{", &client).expect("should produce error response");
         let serialized = serde_json::to_value(&response).unwrap();
         assert_eq!(serialized["error"]["code"], -32700);
+    }
+
+    /// Verify prompts/list returns the expected three prompt names.
+    #[test]
+    fn prompts_list_returns_three_prompts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let client = make_client(tmp.path());
+        let line = r#"{"jsonrpc":"2.0","id":4,"method":"prompts/list"}"#;
+        let response = handle_message(line, &client).expect("should produce a response");
+        let serialized = serde_json::to_value(&response).unwrap();
+        let prompts = serialized["result"]["prompts"]
+            .as_array()
+            .expect("prompts array");
+        assert_eq!(prompts.len(), 3);
+        let names: Vec<&str> = prompts
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"active_persona"));
+        assert!(names.contains(&"select_persona"));
+        assert!(names.contains(&"automate_status"));
+    }
+
+    /// Verify the initialize response advertises both tools and prompts capabilities.
+    #[test]
+    fn initialize_advertises_prompts_capability() {
+        let tmp = tempfile::tempdir().unwrap();
+        let client = make_client(tmp.path());
+        let line = r#"{"jsonrpc":"2.0","id":5,"method":"initialize","params":{}}"#;
+        let response = handle_message(line, &client).expect("should produce a response");
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert!(
+            serialized["result"]["capabilities"]["prompts"].is_object(),
+            "initialize must declare the prompts capability"
+        );
+        assert!(
+            serialized["result"]["capabilities"]["tools"].is_object(),
+            "initialize must declare the tools capability"
+        );
+    }
+
+    /// Verify prompts/get with a known prompt and an empty project returns a graceful hint.
+    #[test]
+    fn prompts_get_active_persona_hints_when_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_root = tmp.path().join("project");
+        fs::create_dir_all(&project_root).unwrap();
+        let client = make_client(&tmp.path().join("data"));
+
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "prompts/get",
+            "params": {
+                "name": "active_persona",
+                "arguments": { "project_root": project_root.to_str().unwrap() }
+            }
+        });
+        let response = handle_message(&msg.to_string(), &client).expect("should produce a response");
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert!(
+            serialized.get("error").is_none() || serialized["error"].is_null(),
+            "expected success, got error: {:?}",
+            serialized.get("error")
+        );
+        let text = serialized["result"]["messages"][0]["content"]["text"]
+            .as_str()
+            .unwrap();
+        assert!(text.contains("No Frameshift persona is active"));
+    }
+
+    /// Verify prompts/get with an unknown prompt name returns a JSON-RPC error.
+    #[test]
+    fn prompts_get_unknown_prompt_returns_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let client = make_client(tmp.path());
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "prompts/get",
+            "params": { "name": "no-such-prompt", "arguments": {} }
+        });
+        let response = handle_message(&msg.to_string(), &client).expect("should produce a response");
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert_eq!(serialized["error"]["code"], -32602);
+        assert!(
+            serialized["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("unknown prompt")
+        );
     }
 
     /// Verify grow_append integration through the full message handler.
