@@ -4,6 +4,7 @@
 //! up the Postgres catalog adapter and filesystem object store, and calls
 //! [`frameshift_server::run`] to serve until SIGTERM/SIGINT.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 use frameshift_catalog_postgres::{PostgresCatalog, PostgresCatalogConfig};
+use frameshift_memory::MemoryAdapter;
 use frameshift_objects::PackStore;
 use frameshift_objects_fs::{FsPackStore, FsPackStoreConfig};
 use frameshift_objects_r2::{R2PackStore, R2PackStoreConfig};
@@ -41,13 +43,13 @@ fn init_tracing(config: &ServerConfig) {
     }
 }
 
-/// Build [`AppState`] by initializing the Postgres catalog and filesystem
-/// object store from the resolved config.
+/// Build [`AppState`] by initializing the Postgres catalog, object store, and
+/// optional memory adapter from the resolved config.
 ///
-/// Both backends are initialized before the TCP socket is bound so that startup
-/// errors (bad connection string, unwritable directory) are surfaced immediately
-/// as `ServerError::Startup` rather than causing runtime failures after the
-/// server is already accepting connections.
+/// All backends are initialized before the TCP socket is bound so that startup
+/// errors (bad connection string, unwritable directory, invalid memory config)
+/// are surfaced immediately as `ServerError::Startup` rather than causing
+/// runtime failures after the server is already accepting connections.
 async fn build_state(config: Arc<ServerConfig>) -> Result<AppState, ServerError> {
     use secrecy::ExposeSecret as _;
 
@@ -63,11 +65,13 @@ async fn build_state(config: Arc<ServerConfig>) -> Result<AppState, ServerError>
         .map_err(|e| ServerError::Startup(e.to_string()))?;
 
     let objects = build_object_store(&config).await?;
+    let memory = build_memory_adapter(&config).await?;
 
     Ok(AppState {
         catalog: Arc::new(catalog),
         objects,
         runtime: None,
+        memory,
         config,
     })
 }
@@ -123,6 +127,99 @@ async fn build_object_store(
             "unknown OBJECT_STORE_BACKEND={other:?}; expected \"fs\" or \"r2\""
         ))),
     }
+}
+
+/// Construct the configured memory adapter based on `MEMORY_BACKEND`.
+///
+/// - `"none"` (default): returns `None` -- no memory adapter.
+/// - `"http"`: builds an [`HttpAdapter`] from `MEMORY_HTTP_*` env vars.
+/// - `"sqlite"`: builds a [`SqliteFtsAdapter`] from `MEMORY_SQLITE_PATH`.
+///
+/// Unknown values produce a [`ServerError::Startup`].
+async fn build_memory_adapter(
+    config: &ServerConfig,
+) -> Result<Option<Arc<dyn MemoryAdapter>>, ServerError> {
+    match config.memory_backend.as_str() {
+        "none" => Ok(None),
+        "http" => {
+            use frameshift_memory_http::{HttpAdapter, HttpAdapterConfig};
+
+            let endpoint: url::Url = config
+                .memory_http_endpoint
+                .parse()
+                .map_err(|e| ServerError::Startup(format!("MEMORY_HTTP_ENDPOINT: {e}")))?;
+
+            let auth = parse_memory_http_auth(&config.memory_http_auth)?;
+
+            let adapter_config = HttpAdapterConfig {
+                endpoint,
+                auth,
+                timeout: Duration::from_secs(config.memory_http_timeout_secs),
+                user_agent: "frameshift-server".to_string(),
+            };
+
+            let adapter = HttpAdapter::new(adapter_config)
+                .map_err(|e| ServerError::Startup(format!("HTTP memory adapter: {e}")))?;
+
+            tracing::info!(
+                endpoint = %config.memory_http_endpoint,
+                "HTTP memory adapter configured"
+            );
+
+            Ok(Some(Arc::new(adapter)))
+        }
+        "sqlite" => {
+            use frameshift_memory_sqlite_fts::{SqliteFtsAdapter, SqliteFtsConfig};
+
+            if config.memory_sqlite_path.is_empty() {
+                return Err(ServerError::Startup(
+                    "MEMORY_BACKEND=sqlite requires MEMORY_SQLITE_PATH".into(),
+                ));
+            }
+
+            let sqlite_config = SqliteFtsConfig {
+                path: PathBuf::from(&config.memory_sqlite_path),
+                pool_size: 4,
+            };
+
+            let adapter = SqliteFtsAdapter::new(sqlite_config)
+                .await
+                .map_err(|e| ServerError::Startup(format!("SQLite memory adapter: {e}")))?;
+
+            tracing::info!(
+                path = %config.memory_sqlite_path,
+                "SQLite FTS memory adapter configured"
+            );
+
+            Ok(Some(Arc::new(adapter)))
+        }
+        other => Err(ServerError::Startup(format!(
+            "unknown MEMORY_BACKEND={other:?}; expected \"none\", \"http\", or \"sqlite\""
+        ))),
+    }
+}
+
+/// Parse the `MEMORY_HTTP_AUTH` string into an [`HttpAuth`] variant.
+///
+/// Accepted formats:
+/// - `"none"` -> `HttpAuth::None`
+/// - `"bearer:<token>"` -> `HttpAuth::Bearer(<token>)`
+fn parse_memory_http_auth(
+    raw: &str,
+) -> Result<frameshift_memory_http::HttpAuth, ServerError> {
+    use frameshift_memory_http::HttpAuth;
+
+    if raw == "none" || raw.is_empty() {
+        return Ok(HttpAuth::None);
+    }
+    if let Some(token) = raw.strip_prefix("bearer:") {
+        return Ok(HttpAuth::Bearer(secrecy::SecretString::new(
+            token.to_string(),
+        )));
+    }
+    Err(ServerError::Startup(format!(
+        "unknown MEMORY_HTTP_AUTH={raw:?}; expected \"none\" or \"bearer:<token>\""
+    )))
 }
 
 #[tokio::main]

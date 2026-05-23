@@ -70,6 +70,11 @@ fn test_config() -> Arc<ServerConfig> {
         r2_region: "auto".to_string(),
         r2_access_key_id: String::new(),
         r2_secret_access_key: SecretString::new(String::new()),
+        memory_backend: "none".to_string(),
+        memory_http_endpoint: String::new(),
+        memory_http_auth: "none".to_string(),
+        memory_http_timeout_secs: 30,
+        memory_sqlite_path: String::new(),
     })
 }
 
@@ -79,6 +84,7 @@ fn make_state(catalog: MockCatalog, objects: MockPackStore) -> AppState {
         catalog: Arc::new(catalog),
         objects: Arc::new(objects),
         runtime: None,
+        memory: None,
         config: test_config(),
     }
 }
@@ -570,11 +576,17 @@ fn dl_state_with_rate(catalog: MockCatalog, objects: MockPackStore, rate: u32) -
         r2_region: "auto".to_string(),
         r2_access_key_id: String::new(),
         r2_secret_access_key: SecretString::new(String::new()),
+        memory_backend: "none".to_string(),
+        memory_http_endpoint: String::new(),
+        memory_http_auth: "none".to_string(),
+        memory_http_timeout_secs: 30,
+        memory_sqlite_path: String::new(),
     };
     AppState {
         catalog: Arc::new(catalog),
         objects: Arc::new(objects),
         runtime: None,
+        memory: None,
         config: Arc::new(cfg),
     }
 }

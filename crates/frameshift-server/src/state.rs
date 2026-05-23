@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use frameshift_catalog::CatalogBackend;
+use frameshift_memory::MemoryAdapter;
 use frameshift_objects::PackStore;
 
 use crate::config::ServerConfig;
@@ -47,6 +48,12 @@ pub struct AppState {
     /// persona loading. Absent in pure API-gateway mode. The MCP surface
     /// (a later milestone) will require a `Some` value here.
     pub runtime: Option<Arc<frameshift_runtime::Runtime>>,
+
+    /// Optional memory adapter for persona memory operations.
+    ///
+    /// Configured via `MEMORY_BACKEND` env var. When `None`, personas with
+    /// hard memory requirements fail to load.
+    pub memory: Option<Arc<dyn MemoryAdapter>>,
 
     /// Resolved server configuration, shared read-only across all handlers.
     ///

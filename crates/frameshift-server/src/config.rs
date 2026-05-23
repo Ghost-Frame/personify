@@ -183,6 +183,36 @@ pub struct ServerConfig {
     /// R2 secret access key. Stored as [`SecretString`] so the bytes never
     /// appear in `Debug` output. Supplied via a secrets manager in production.
     pub r2_secret_access_key: SecretString,
+
+    /// Memory backend selector: `"none"` (default), `"http"`, or `"sqlite"`.
+    ///
+    /// - `"none"` -- no memory adapter; personas that require memory will fail
+    ///   to load with a hard capability error.
+    /// - `"http"` -- connects to an HTTP memory endpoint (e.g. syntheos-memory-gateway).
+    /// - `"sqlite"` -- uses a local SQLite FTS5 database.
+    pub memory_backend: String,
+
+    /// Base URL for the HTTP memory endpoint (e.g. `http://127.0.0.1:4510`).
+    ///
+    /// Used only when `memory_backend == "http"`. Ignored otherwise.
+    pub memory_http_endpoint: String,
+
+    /// Authentication scheme for the HTTP memory endpoint.
+    ///
+    /// `"none"` (default) sends no credentials. `"bearer:<token>"` sends an
+    /// `Authorization: Bearer <token>` header. Used only when
+    /// `memory_backend == "http"`.
+    pub memory_http_auth: String,
+
+    /// Per-attempt request timeout for the HTTP memory adapter, in seconds.
+    ///
+    /// Default: 30 seconds. Used only when `memory_backend == "http"`.
+    pub memory_http_timeout_secs: u64,
+
+    /// Path to the SQLite database file for the FTS memory adapter.
+    ///
+    /// Default: empty string (must be set when `memory_backend == "sqlite"`).
+    pub memory_sqlite_path: String,
 }
 
 impl ServerConfig {
@@ -253,6 +283,11 @@ impl std::fmt::Debug for ServerConfig {
             .field("r2_region", &self.r2_region)
             .field("r2_access_key_id", &self.r2_access_key_id)
             .field("r2_secret_access_key", &"[REDACTED]")
+            .field("memory_backend", &self.memory_backend)
+            .field("memory_http_endpoint", &self.memory_http_endpoint)
+            .field("memory_http_auth", &"[REDACTED]")
+            .field("memory_http_timeout_secs", &self.memory_http_timeout_secs)
+            .field("memory_sqlite_path", &self.memory_sqlite_path)
             .finish()
     }
 }
@@ -321,6 +356,17 @@ struct RawConfig {
     r2_access_key_id: String,
     /// R2 secret access key (raw string, wrapped in `SecretString` on convert).
     r2_secret_access_key: String,
+
+    /// Memory backend selector.
+    memory_backend: String,
+    /// HTTP memory endpoint URL.
+    memory_http_endpoint: String,
+    /// HTTP memory auth scheme.
+    memory_http_auth: String,
+    /// HTTP memory timeout in seconds.
+    memory_http_timeout_secs: u64,
+    /// SQLite memory database path.
+    memory_sqlite_path: String,
 }
 
 impl RawConfig {
@@ -350,6 +396,11 @@ impl RawConfig {
             r2_region: self.r2_region,
             r2_access_key_id: self.r2_access_key_id,
             r2_secret_access_key: SecretString::new(self.r2_secret_access_key),
+            memory_backend: self.memory_backend,
+            memory_http_endpoint: self.memory_http_endpoint,
+            memory_http_auth: self.memory_http_auth,
+            memory_http_timeout_secs: self.memory_http_timeout_secs,
+            memory_sqlite_path: self.memory_sqlite_path,
         }
     }
 }
@@ -380,6 +431,11 @@ fn default_raw_config() -> RawConfig {
         r2_region: "auto".to_string(),
         r2_access_key_id: String::new(),
         r2_secret_access_key: String::new(),
+        memory_backend: "none".to_string(),
+        memory_http_endpoint: String::new(),
+        memory_http_auth: "none".to_string(),
+        memory_http_timeout_secs: 30,
+        memory_sqlite_path: String::new(),
     }
 }
 
@@ -439,6 +495,11 @@ mod tests {
             r2_region: "auto".to_string(),
             r2_access_key_id: String::new(),
             r2_secret_access_key: SecretString::new(String::new()),
+            memory_backend: "none".to_string(),
+            memory_http_endpoint: String::new(),
+            memory_http_auth: "none".to_string(),
+            memory_http_timeout_secs: 30,
+            memory_sqlite_path: String::new(),
         };
         let debug = format!("{cfg:?}");
         assert!(
@@ -471,6 +532,11 @@ mod tests {
             r2_region: "auto".to_string(),
             r2_access_key_id: String::new(),
             r2_secret_access_key: SecretString::new(String::new()),
+            memory_backend: "none".to_string(),
+            memory_http_endpoint: String::new(),
+            memory_http_auth: "none".to_string(),
+            memory_http_timeout_secs: 30,
+            memory_sqlite_path: String::new(),
         };
         let got: Vec<&str> = cfg.cors_origins().collect();
         assert_eq!(got, vec!["https://a.example", "https://b.example"]);
@@ -499,6 +565,11 @@ mod tests {
             r2_region: "auto".to_string(),
             r2_access_key_id: String::new(),
             r2_secret_access_key: SecretString::new(String::new()),
+            memory_backend: "none".to_string(),
+            memory_http_endpoint: String::new(),
+            memory_http_auth: "none".to_string(),
+            memory_http_timeout_secs: 30,
+            memory_sqlite_path: String::new(),
         };
         assert_eq!(cfg.cors_origins().count(), 0);
     }
@@ -554,6 +625,11 @@ mod tests {
             r2_region: "auto".to_string(),
             r2_access_key_id: String::new(),
             r2_secret_access_key: SecretString::new(String::new()),
+            memory_backend: "none".to_string(),
+            memory_http_endpoint: String::new(),
+            memory_http_auth: "none".to_string(),
+            memory_http_timeout_secs: 30,
+            memory_sqlite_path: String::new(),
         }
     }
 

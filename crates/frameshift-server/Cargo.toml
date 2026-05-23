@@ -18,7 +18,10 @@ frameshift-objects-fs = { path = "../frameshift-objects-fs" }
 frameshift-objects-r2 = { path = "../frameshift-objects-r2" }
 frameshift-runtime = { path = "../frameshift-runtime" }
 frameshift-memory = { path = "../frameshift-memory" }
+frameshift-memory-http = { path = "../frameshift-memory-http" }
+frameshift-memory-sqlite-fts = { path = "../frameshift-memory-sqlite-fts" }
 frameshift-pack = { path = "../frameshift-pack" }
+url = { workspace = true }
 axum = { workspace = true, features = ["multipart"] }
 tokio = { workspace = true }
 tower = { workspace = true }

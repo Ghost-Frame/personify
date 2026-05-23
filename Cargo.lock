@@ -1528,6 +1528,8 @@ dependencies = [
  "frameshift-catalog",
  "frameshift-catalog-postgres",
  "frameshift-memory",
+ "frameshift-memory-http",
+ "frameshift-memory-sqlite-fts",
  "frameshift-objects",
  "frameshift-objects-fs",
  "frameshift-objects-r2",
@@ -1550,6 +1552,7 @@ dependencies = [
  "tower_governor",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
