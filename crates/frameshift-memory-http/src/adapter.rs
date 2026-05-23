@@ -55,6 +55,10 @@ pub enum HttpAuth {
         /// Path to the PEM-encoded client private key.
         client_key: PathBuf,
     },
+
+    /// No authentication. Suitable for localhost-only endpoints that do not
+    /// require credentials (e.g. syntheos-memory-gateway with SD2 accepted).
+    None,
 }
 
 impl std::fmt::Debug for HttpAuth {
@@ -76,6 +80,7 @@ impl std::fmt::Debug for HttpAuth {
                 .field("client_cert", client_cert)
                 .field("client_key", client_key)
                 .finish(),
+            Self::None => write!(f, "None"),
         }
     }
 }
@@ -233,7 +238,7 @@ impl HttpAdapter {
             HttpAuth::ApiKey { header_name, value } => {
                 rb.header(header_name.as_str(), value.expose_secret())
             }
-            HttpAuth::Mtls { .. } => rb,
+            HttpAuth::Mtls { .. } | HttpAuth::None => rb,
         }
     }
 
