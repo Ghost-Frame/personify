@@ -284,6 +284,8 @@ mod tests {
             required_tools: vec!["read_file".to_string()],
             filesystem_scope: "~/projects/myapp/**".to_string(),
             network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         }
     }
 

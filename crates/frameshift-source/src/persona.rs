@@ -145,6 +145,12 @@ pub struct CapabilityManifest {
     /// when absent from TOML.
     #[serde(default)]
     pub network_egress: bool,
+    /// Task intents this persona is designed for (e.g. "debugging", "security").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub primary_intents: Vec<String>,
+    /// Keywords that should repel this persona during selection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anti_keywords: Vec<String>,
 }
 
 /// Conformance record: self-reported score and bundle hash for audit trails.
@@ -421,6 +427,8 @@ mod tests {
                 required_tools: vec!["read_file".to_string(), "write_file".to_string()],
                 filesystem_scope: "/home/**".to_string(),
                 network_egress: false,
+                primary_intents: vec![],
+                anti_keywords: vec![],
             }),
             conformance: Some(ConformanceConfig {
                 score: 0.95,

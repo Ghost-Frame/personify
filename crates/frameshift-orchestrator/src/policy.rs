@@ -269,6 +269,8 @@ mod tests {
             keywords: keywords.iter().map(|k| k.to_string()).collect(),
             required_tools: vec![],
             network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         }
     }
 

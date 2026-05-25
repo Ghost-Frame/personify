@@ -42,6 +42,13 @@ pub struct PersonaProfile {
 
     /// Whether the capability manifest declares network egress required.
     pub network_egress: bool,
+
+    /// Task intents this persona is strongest at, parsed from capability manifest
+    /// or inferred from keywords.
+    pub primary_intents: Vec<crate::intent::Intent>,
+
+    /// Keywords that should repel this persona during selection scoring.
+    pub anti_keywords: Vec<String>,
 }
 
 /// Minimal pack.toml structure for freeform personas that lack `persona.toml`.
@@ -72,6 +79,14 @@ struct PackCapabilityManifest {
     /// Whether network egress is required.
     #[serde(default)]
     network_egress: bool,
+
+    /// Task intents this persona is designed for (e.g. "debugging", "security").
+    #[serde(default)]
+    primary_intents: Vec<String>,
+
+    /// Keywords that should repel this persona during selection scoring.
+    #[serde(default)]
+    anti_keywords: Vec<String>,
 }
 
 impl PersonaProfile {
@@ -147,6 +162,21 @@ impl PersonaProfile {
             (Vec::new(), false)
         };
 
+        let primary_intents = if let Some(cm) = &src.persona.capability_manifest {
+            cm.primary_intents
+                .iter()
+                .filter_map(|s| parse_intent(s))
+                .collect()
+        } else {
+            infer_intents_from_keywords(&keywords)
+        };
+
+        let anti_keywords = if let Some(cm) = &src.persona.capability_manifest {
+            cm.anti_keywords.clone()
+        } else {
+            Vec::new()
+        };
+
         PersonaProfile {
             name,
             description,
@@ -154,6 +184,8 @@ impl PersonaProfile {
             keywords,
             required_tools,
             network_egress,
+            primary_intents,
+            anti_keywords,
         }
     }
 
@@ -230,10 +262,21 @@ impl PersonaProfile {
         }
 
         // Capability manifest from pack.toml.
-        let (required_tools, network_egress) = pack
-            .capability_manifest
-            .map(|cm| (cm.required_tools, cm.network_egress))
-            .unwrap_or_else(|| (Vec::new(), false));
+        let (required_tools, network_egress, primary_intents, anti_keywords) = if let Some(cm) = pack.capability_manifest {
+            let intents: Vec<crate::intent::Intent> = cm
+                .primary_intents
+                .iter()
+                .filter_map(|s| parse_intent(s))
+                .collect();
+            let resolved_intents = if intents.is_empty() {
+                infer_intents_from_keywords(&keywords)
+            } else {
+                intents
+            };
+            (cm.required_tools, cm.network_egress, resolved_intents, cm.anti_keywords)
+        } else {
+            (Vec::new(), false, infer_intents_from_keywords(&keywords), Vec::new())
+        };
 
         Ok(PersonaProfile {
             name,
@@ -242,6 +285,8 @@ impl PersonaProfile {
             keywords,
             required_tools,
             network_egress,
+            primary_intents,
+            anti_keywords,
         })
     }
 
@@ -396,6 +441,35 @@ fn extract_keywords(text: &str) -> Vec<String> {
         .filter(|t| !STOPWORDS.contains(&t.as_str()))
         .filter(|t| seen.insert(t.clone()))
         .collect()
+}
+
+/// Parse an intent string into an Intent enum value.
+///
+/// Matches the lowercased string against known intent category names. Returns
+/// `None` for unrecognized strings so callers can filter cleanly.
+fn parse_intent(s: &str) -> Option<crate::intent::Intent> {
+    use crate::intent::Intent;
+    match s.to_lowercase().as_str() {
+        "implementation" => Some(Intent::Implementation),
+        "debugging" => Some(Intent::Debugging),
+        "review" => Some(Intent::Review),
+        "security" => Some(Intent::Security),
+        "writing" => Some(Intent::Writing),
+        "ops" | "ops/infra" => Some(Intent::Ops),
+        "testing" => Some(Intent::Testing),
+        "refactoring" => Some(Intent::Refactoring),
+        "performance" => Some(Intent::Performance),
+        "design" => Some(Intent::Design),
+        _ => None,
+    }
+}
+
+/// Infer primary intents from a persona's keyword set when no capability manifest declares them.
+///
+/// Delegates to `crate::intent::classify` over the keyword slice, collecting
+/// the result (at most one intent) into a Vec.
+fn infer_intents_from_keywords(keywords: &[String]) -> Vec<crate::intent::Intent> {
+    crate::intent::classify(keywords).into_iter().collect()
 }
 
 /// An in-memory index of all installed persona profiles, ready for scoring.
@@ -636,6 +710,42 @@ mod tests {
             "expected writing-related keywords; got: {:?}",
             profile.keywords
         );
+    }
+
+    /// profile_extracts_primary_intents_from_capability_manifest verifies that
+    /// declared primary_intents strings are parsed into Intent enum values.
+    #[test]
+    fn profile_extracts_primary_intents_from_capability_manifest() {
+        use frameshift_source::*;
+        let mut src = minimal_source("rust-expert", "precise");
+        src.persona.capability_manifest = Some(CapabilityManifest {
+            required_tools: vec![],
+            filesystem_scope: String::new(),
+            network_egress: false,
+            primary_intents: vec!["implementation".to_string(), "debugging".to_string()],
+            anti_keywords: vec![],
+        });
+        let profile = PersonaProfile::from_source(&src);
+        assert_eq!(profile.primary_intents.len(), 2);
+        assert!(profile.primary_intents.iter().any(|i| *i == crate::intent::Intent::Implementation));
+        assert!(profile.primary_intents.iter().any(|i| *i == crate::intent::Intent::Debugging));
+    }
+
+    /// profile_extracts_anti_keywords verifies that anti_keywords from the
+    /// capability manifest are copied verbatim into PersonaProfile.
+    #[test]
+    fn profile_extracts_anti_keywords() {
+        use frameshift_source::*;
+        let mut src = minimal_source("rust-expert", "precise");
+        src.persona.capability_manifest = Some(CapabilityManifest {
+            required_tools: vec![],
+            filesystem_scope: String::new(),
+            network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec!["deployment".to_string(), "css".to_string()],
+        });
+        let profile = PersonaProfile::from_source(&src);
+        assert_eq!(profile.anti_keywords, vec!["deployment", "css"]);
     }
 
     /// from_catalog indexes multiple dirs and skips one with neither file.
