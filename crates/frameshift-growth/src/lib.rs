@@ -8,6 +8,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 /// Errors from growth file operations.
 #[derive(Debug, thiserror::Error)]
 pub enum GrowthError {
@@ -131,6 +133,153 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     (y, m, d)
 }
 
+/// Scope of a growth entry: project-specific or global.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    /// Learning specific to this project.
+    Project,
+    /// Universal learning applicable across projects.
+    Global,
+}
+
+/// A structured growth entry in JSONL format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrowthEntry {
+    /// RFC3339 timestamp.
+    pub ts: String,
+    /// Session ID (e.g., PID) that recorded this entry.
+    pub session: String,
+    /// Project ID hash.
+    pub project_id: String,
+    /// Persona name.
+    pub persona: String,
+    /// Whether the persona was auto-selected.
+    pub auto_selected: bool,
+    /// Task description at time of learning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    /// Classified intent at time of learning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    /// The actual learning text.
+    pub text: String,
+    /// Scope of this learning.
+    pub scope: Scope,
+}
+
+/// Append a JSONL growth entry to the appropriate file based on scope.
+///
+/// Project-scope entries go to `{data_root}/projects/{pid}/personas/{name}/growth.jsonl`.
+/// Global-scope entries go to `{data_root}/personas/{name}/growth.jsonl`.
+pub fn append_jsonl(
+    data_root: &Path,
+    project_id: &str,
+    persona_name: &str,
+    entry: &GrowthEntry,
+) -> Result<(), GrowthError> {
+    validate_path_component(project_id)
+        .map_err(|_| GrowthError::InvalidProjectId(project_id.to_string()))?;
+    validate_path_component(persona_name)
+        .map_err(|_| GrowthError::InvalidPersonaName(persona_name.to_string()))?;
+
+    let path = match entry.scope {
+        Scope::Project => data_root
+            .join("projects")
+            .join(project_id)
+            .join("personas")
+            .join(persona_name)
+            .join("growth.jsonl"),
+        Scope::Global => data_root
+            .join("personas")
+            .join(persona_name)
+            .join("growth.jsonl"),
+    };
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| GrowthError::Io {
+            path: path.clone(),
+            source,
+        })?;
+    }
+
+    let mut line = serde_json::to_string(entry).map_err(|e| GrowthError::Io {
+        path: path.clone(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+    })?;
+    line.push('\n');
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|source| GrowthError::Io { path: path.clone(), source })?;
+    file.write_all(line.as_bytes())
+        .map_err(|source| GrowthError::Io { path, source })?;
+
+    Ok(())
+}
+
+/// Read all JSONL growth entries for a persona in a given scope.
+pub fn read_entries(
+    data_root: &Path,
+    project_id: &str,
+    persona_name: &str,
+    scope: Scope,
+) -> Result<Vec<GrowthEntry>, GrowthError> {
+    let path = match scope {
+        Scope::Project => data_root
+            .join("projects")
+            .join(project_id)
+            .join("personas")
+            .join(persona_name)
+            .join("growth.jsonl"),
+        Scope::Global => data_root
+            .join("personas")
+            .join(persona_name)
+            .join("growth.jsonl"),
+    };
+
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let data = fs::read_to_string(&path).map_err(|source| GrowthError::Io {
+        path: path.clone(),
+        source,
+    })?;
+
+    let mut entries = Vec::new();
+    for line in data.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let entry: GrowthEntry = serde_json::from_str(trimmed).map_err(|e| GrowthError::Io {
+            path: path.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        })?;
+        entries.push(entry);
+    }
+
+    Ok(entries)
+}
+
+/// Return the last N entries for a persona, combining project + global scope.
+pub fn recent_entries(
+    data_root: &Path,
+    project_id: &str,
+    persona_name: &str,
+    n: usize,
+) -> Result<Vec<GrowthEntry>, GrowthError> {
+    let mut project = read_entries(data_root, project_id, persona_name, Scope::Project)?;
+    let global = read_entries(data_root, project_id, persona_name, Scope::Global)?;
+    project.extend(global);
+    project.sort_by(|a, b| b.ts.cmp(&a.ts));
+    project.truncate(n);
+    Ok(project)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +384,69 @@ mod tests {
         let ts = format_utc_now();
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 20);
+    }
+
+    #[test]
+    fn append_jsonl_writes_structured_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let entry = GrowthEntry {
+            ts: "2026-05-24T14:30:00Z".to_string(),
+            session: "12345".to_string(),
+            project_id: "abc123".to_string(),
+            persona: "rust".to_string(),
+            auto_selected: false,
+            task: Some("debugging compilation error".to_string()),
+            intent: Some("debugging".to_string()),
+            text: "Learned orphan rules".to_string(),
+            scope: Scope::Project,
+        };
+        append_jsonl(tmp.path(), "abc123", "rust", &entry).unwrap();
+
+        let path = tmp.path().join("projects/abc123/personas/rust/growth.jsonl");
+        assert!(path.exists());
+        let content = fs::read_to_string(&path).unwrap();
+        let parsed: GrowthEntry = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed.text, "Learned orphan rules");
+    }
+
+    #[test]
+    fn append_global_writes_to_global_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let entry = GrowthEntry {
+            ts: "2026-05-24T14:30:00Z".to_string(),
+            session: "12345".to_string(),
+            project_id: "abc123".to_string(),
+            persona: "rust".to_string(),
+            auto_selected: false,
+            task: None,
+            intent: None,
+            text: "thiserror over anyhow in libraries".to_string(),
+            scope: Scope::Global,
+        };
+        append_jsonl(tmp.path(), "abc123", "rust", &entry).unwrap();
+
+        let path = tmp.path().join("personas/rust/growth.jsonl");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn read_entries_returns_all_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..3 {
+            let entry = GrowthEntry {
+                ts: format!("2026-05-24T14:3{i}:00Z"),
+                session: "s1".to_string(),
+                project_id: "p1".to_string(),
+                persona: "rust".to_string(),
+                auto_selected: false,
+                task: None,
+                intent: None,
+                text: format!("entry {i}"),
+                scope: Scope::Project,
+            };
+            append_jsonl(tmp.path(), "p1", "rust", &entry).unwrap();
+        }
+        let entries = read_entries(tmp.path(), "p1", "rust", Scope::Project).unwrap();
+        assert_eq!(entries.len(), 3);
     }
 }
