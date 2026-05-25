@@ -201,7 +201,13 @@ pub fn rank(
                 + weights.capability * cap_score;
 
             // Apply preference bias and clamp.
-            let bias = prefs.bias_for(&profile.name);
+            // Use intent-aware lookup when the context carries an inferred intent;
+            // days_since_override is 0 here -- the daemon will supply the real value.
+            let bias = if let Some(intent) = ctx.inferred_intent {
+                prefs.effective_bias_for(&profile.name, Some(intent), 0)
+            } else {
+                prefs.bias_for(&profile.name)
+            };
             let final_score = (blended + bias).clamp(0.0, 1.0);
 
             // Build rationale string.
