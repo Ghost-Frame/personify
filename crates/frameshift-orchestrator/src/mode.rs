@@ -16,11 +16,26 @@ pub enum Mode {
     On,
 }
 
+/// Returns the default switching sensitivity value (0.5).
+///
+/// Used as the serde default for `ModeState::sensitivity` to ensure backward
+/// compatibility with persisted files that predate the sensitivity field.
+fn default_sensitivity() -> f32 {
+    0.5
+}
+
 /// Persisted automate mode state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModeState {
     /// The current mode (on or off).
     pub mode: Mode,
+
+    /// Switching sensitivity in the range [0.0, 1.0].
+    ///
+    /// 0.0 = stable (rarely switches), 1.0 = responsive (switches eagerly).
+    /// Defaults to 0.5 when loading legacy files that lack this field.
+    #[serde(default = "default_sensitivity")]
+    pub sensitivity: f32,
 }
 
 impl ModeState {
@@ -29,7 +44,7 @@ impl ModeState {
     /// Returns `ModeState { mode: Mode::Off }` if the file does not exist.
     pub fn load(path: &Path) -> Result<Self, OrchestratorError> {
         if !path.exists() {
-            return Ok(ModeState { mode: Mode::Off });
+            return Ok(ModeState { mode: Mode::Off, sensitivity: default_sensitivity() });
         }
         let data = std::fs::read_to_string(path)?;
         let state = serde_json::from_str(&data)?;
@@ -60,25 +75,39 @@ mod tests {
         assert_eq!(state.mode, Mode::Off);
     }
 
-    /// Save then load round-trips Mode::On.
+    /// Save then load round-trips Mode::On with default sensitivity.
     #[test]
     fn save_load_roundtrip_on() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("mode.json");
-        let state = ModeState { mode: Mode::On };
+        let state = ModeState { mode: Mode::On, sensitivity: 0.5 };
         state.save(&path).unwrap();
         let loaded = ModeState::load(&path).unwrap();
         assert_eq!(loaded.mode, Mode::On);
+        assert!((loaded.sensitivity - 0.5).abs() < f32::EPSILON);
     }
 
-    /// Save then load round-trips Mode::Off.
+    /// Save then load round-trips Mode::Off with default sensitivity.
     #[test]
     fn save_load_roundtrip_off() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("mode.json");
-        let state = ModeState { mode: Mode::Off };
+        let state = ModeState { mode: Mode::Off, sensitivity: 0.5 };
         state.save(&path).unwrap();
         let loaded = ModeState::load(&path).unwrap();
         assert_eq!(loaded.mode, Mode::Off);
+        assert!((loaded.sensitivity - 0.5).abs() < f32::EPSILON);
+    }
+
+    /// Loading a legacy JSON file that lacks the sensitivity field defaults to 0.5.
+    #[test]
+    fn legacy_file_missing_sensitivity_defaults_to_half() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("mode.json");
+        // Write a legacy-format file with no sensitivity field.
+        std::fs::write(&path, r#"{"mode":"on"}"#).unwrap();
+        let loaded = ModeState::load(&path).unwrap();
+        assert_eq!(loaded.mode, Mode::On);
+        assert!((loaded.sensitivity - 0.5).abs() < f32::EPSILON);
     }
 }
