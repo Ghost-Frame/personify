@@ -280,6 +280,107 @@ pub fn recent_entries(
     Ok(project)
 }
 
+/// Migrate a legacy growth.md file to growth.jsonl format.
+///
+/// Parses the markdown format (entries separated by `---` with
+/// `<!-- growth: TIMESTAMP -->` headers) and writes each entry
+/// as a JSONL line with `scope: Project` and no session attribution.
+pub fn migrate_growth_md(
+    data_root: &Path,
+    project_id: &str,
+    persona_name: &str,
+) -> Result<usize, GrowthError> {
+    validate_path_component(project_id)
+        .map_err(|_| GrowthError::InvalidProjectId(project_id.to_string()))?;
+    validate_path_component(persona_name)
+        .map_err(|_| GrowthError::InvalidPersonaName(persona_name.to_string()))?;
+
+    let md_path = data_root
+        .join("projects")
+        .join(project_id)
+        .join("personas")
+        .join(persona_name)
+        .join("growth.md");
+
+    if !md_path.exists() {
+        return Ok(0);
+    }
+
+    let content = fs::read_to_string(&md_path).map_err(|source| GrowthError::Io {
+        path: md_path.clone(),
+        source,
+    })?;
+
+    let mut count = 0;
+    let mut current_ts: Option<String> = None;
+    let mut current_text = String::new();
+
+    for line in content.lines() {
+        if line.trim() == "---" {
+            // Flush previous entry if we have one.
+            if let Some(ts) = current_ts.take() {
+                let text = current_text.trim().to_string();
+                if !text.is_empty() {
+                    let entry = GrowthEntry {
+                        ts,
+                        session: String::new(),
+                        project_id: project_id.to_string(),
+                        persona: persona_name.to_string(),
+                        auto_selected: false,
+                        task: None,
+                        intent: None,
+                        text,
+                        scope: Scope::Project,
+                    };
+                    append_jsonl(data_root, project_id, persona_name, &entry)?;
+                    count += 1;
+                }
+            }
+            current_text.clear();
+            continue;
+        }
+
+        // Check for timestamp comment.
+        if line.trim().starts_with("<!-- growth:") {
+            let ts = line
+                .trim()
+                .trim_start_matches("<!-- growth:")
+                .trim_end_matches("-->")
+                .trim()
+                .to_string();
+            current_ts = Some(ts);
+            continue;
+        }
+
+        if current_ts.is_some() {
+            current_text.push_str(line);
+            current_text.push('\n');
+        }
+    }
+
+    // Flush trailing entry.
+    if let Some(ts) = current_ts {
+        let text = current_text.trim().to_string();
+        if !text.is_empty() {
+            let entry = GrowthEntry {
+                ts,
+                session: String::new(),
+                project_id: project_id.to_string(),
+                persona: persona_name.to_string(),
+                auto_selected: false,
+                task: None,
+                intent: None,
+                text,
+                scope: Scope::Project,
+            };
+            append_jsonl(data_root, project_id, persona_name, &entry)?;
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,5 +549,21 @@ mod tests {
         }
         let entries = read_entries(tmp.path(), "p1", "rust", Scope::Project).unwrap();
         assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn migrate_md_to_jsonl() {
+        let tmp = tempfile::tempdir().unwrap();
+        let md_path = tmp.path().join("projects/p1/personas/rust/growth.md");
+        fs::create_dir_all(md_path.parent().unwrap()).unwrap();
+        fs::write(&md_path, "---\n<!-- growth: 2026-05-19T03:19:52Z -->\n\nDiscovered a useful pattern\n\n---\n<!-- growth: 2026-05-20T10:00:00Z -->\n\nLearned about orphan rules\n\n").unwrap();
+
+        migrate_growth_md(tmp.path(), "p1", "rust").unwrap();
+
+        let entries = read_entries(tmp.path(), "p1", "rust", Scope::Project).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].text, "Discovered a useful pattern");
+        assert_eq!(entries[1].text, "Learned about orphan rules");
+        assert_eq!(entries[0].scope, Scope::Project);
     }
 }
