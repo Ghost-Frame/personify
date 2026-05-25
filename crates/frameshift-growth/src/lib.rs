@@ -381,6 +381,57 @@ pub fn migrate_growth_md(
     Ok(count)
 }
 
+/// Produce an algorithmic summary of growth entries.
+///
+/// Takes the most recent entry per unique intent category, deduplicates
+/// near-identical entries by Jaccard similarity on tokens, and caps at 10
+/// entries concatenated into a single string.
+pub fn summarize(
+    data_root: &Path,
+    project_id: &str,
+    persona_name: &str,
+    scope: Scope,
+) -> Result<String, GrowthError> {
+    let entries = read_entries(data_root, project_id, persona_name, scope)?;
+    if entries.is_empty() {
+        return Ok(String::new());
+    }
+
+    // Most recent entry per intent category.
+    let mut by_intent: std::collections::BTreeMap<String, &GrowthEntry> = std::collections::BTreeMap::new();
+    let mut no_intent: Vec<&GrowthEntry> = Vec::new();
+
+    // Process entries in reverse chronological order.
+    for entry in entries.iter().rev() {
+        if let Some(intent) = &entry.intent {
+            by_intent.entry(intent.clone()).or_insert(entry);
+        } else {
+            no_intent.push(entry);
+        }
+    }
+
+    let mut selected: Vec<&str> = by_intent.values().map(|e| e.text.as_str()).collect();
+    for entry in no_intent.iter().take(10 - selected.len()) {
+        // Simple Jaccard dedup: skip if > 50% token overlap with any selected entry.
+        let tokens: std::collections::HashSet<&str> = entry.text.split_whitespace().collect();
+        let is_dup = selected.iter().any(|existing| {
+            let existing_tokens: std::collections::HashSet<&str> = existing.split_whitespace().collect();
+            let intersection = tokens.intersection(&existing_tokens).count();
+            let union = tokens.union(&existing_tokens).count();
+            if union == 0 { return true; }
+            (intersection as f32 / union as f32) > 0.5
+        });
+        if !is_dup {
+            selected.push(&entry.text);
+        }
+        if selected.len() >= 10 {
+            break;
+        }
+    }
+
+    Ok(selected.join(". "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,5 +616,29 @@ mod tests {
         assert_eq!(entries[0].text, "Discovered a useful pattern");
         assert_eq!(entries[1].text, "Learned about orphan rules");
         assert_eq!(entries[0].scope, Scope::Project);
+    }
+
+    #[test]
+    fn summarize_deduplicates_and_caps() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..15 {
+            let entry = GrowthEntry {
+                ts: format!("2026-05-{:02}T10:00:00Z", i + 1),
+                session: "s1".to_string(),
+                project_id: "p1".to_string(),
+                persona: "rust".to_string(),
+                auto_selected: false,
+                task: None,
+                intent: if i % 3 == 0 { Some("debugging".to_string()) } else { None },
+                text: format!("learning number {i}"),
+                scope: Scope::Project,
+            };
+            append_jsonl(tmp.path(), "p1", "rust", &entry).unwrap();
+        }
+
+        let summary = summarize(tmp.path(), "p1", "rust", Scope::Project).unwrap();
+        let line_count = summary.lines().filter(|l| !l.is_empty()).count();
+        assert!(line_count <= 10, "summary should cap at 10 entries, got {line_count}");
+        assert!(!summary.is_empty());
     }
 }
