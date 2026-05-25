@@ -10,7 +10,7 @@ use std::path::Path;
 use frameshift_client::Client;
 use frameshift_orchestrator::{
     audit::{now_timestamp, AuditLog, Transition},
-    controller::{Decision, SwitchController},
+    controller::{Decision, SwitchController, SwitchPolicy},
     feedback::Preferences,
     mode::{Mode, ModeState},
     policy::PolicyWeights,
@@ -55,6 +55,10 @@ pub fn evaluate_and_apply(client: &Client, controller: &mut SwitchController, pr
         // Automate mode is off; nothing to do.
         return;
     }
+
+    // Update the switching policy from persisted sensitivity.
+    let policy = SwitchPolicy::from_sensitivity(mode_state.sensitivity);
+    controller.set_policy(policy);
 
     // Step 2: check lock marker.
     if lock_path.exists() {
