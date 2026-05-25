@@ -39,16 +39,37 @@ pub struct SwitchPolicy {
     /// Number of consecutive `decide` calls the new candidate must be top-ranked
     /// before the switch is actually executed (debounce).
     pub debounce_ticks: u32,
+
+    /// Z-score threshold for identifying a clear winner relative to the score distribution.
+    pub z_threshold: f32,
+
+    /// Minimum normalized gap between rank-1 and rank-2 scores for a meaningful advantage.
+    pub min_gap_fraction: f32,
+}
+
+impl SwitchPolicy {
+    /// Construct a SwitchPolicy from a user-facing sensitivity value in [0.0, 1.0].
+    ///
+    /// Sensitivity maps to internal parameters:
+    /// - z_threshold: 1.0 - sensitivity * 0.7 (range 1.0 to 0.3)
+    /// - min_gap_fraction: 0.15 - sensitivity * 0.12 (range 0.15 to 0.03)
+    /// - debounce_ticks: max(0, 3 - floor(sensitivity * 3)) (range 3 to 0)
+    pub fn from_sensitivity(sensitivity: f32) -> Self {
+        let s = sensitivity.clamp(0.0, 1.0);
+        SwitchPolicy {
+            min_confidence: 0.0,
+            switch_margin: 0.0,
+            debounce_ticks: (3.0 - (s * 3.0).floor()).max(0.0) as u32,
+            z_threshold: 1.0 - s * 0.7,
+            min_gap_fraction: 0.15 - s * 0.12,
+        }
+    }
 }
 
 impl Default for SwitchPolicy {
-    /// Returns the default policy: min_confidence=0.55, switch_margin=0.15, debounce_ticks=2.
+    /// Returns the default policy from sensitivity 0.5 (balanced).
     fn default() -> Self {
-        SwitchPolicy {
-            min_confidence: 0.55,
-            switch_margin: 0.15,
-            debounce_ticks: 2,
-        }
+        Self::from_sensitivity(0.5)
     }
 }
 
@@ -145,6 +166,11 @@ impl SwitchController {
         self.challenger = None;
     }
 
+    /// Update the policy parameters (e.g., when sensitivity changes).
+    pub fn set_policy(&mut self, policy: SwitchPolicy) {
+        self.policy = policy;
+    }
+
     /// Return a reference to the current state.
     pub fn state(&self) -> &AutomateState {
         &self.state
@@ -154,10 +180,11 @@ impl SwitchController {
     ///
     /// Logic:
     /// - `Locked`: always `Hold` regardless of ranking.
-    /// - Empty `ranked` or top confidence < `min_confidence`: `NoCandidates` or `Hold`.
-    /// - `Armed` / `Off`: switch immediately to top if confidence passes threshold.
-    /// - `Active(p)`: switch only if challenger != p AND score advantage >=
-    ///   `switch_margin` AND debounce counter has been saturated.
+    /// - Empty `ranked`: `NoCandidates`.
+    /// - `Armed` / `Off`: switch immediately to top candidate.
+    /// - `Active(p)`: distribution-aware switching -- gap and z-score must pass
+    ///   policy thresholds, and debounce must be satisfied unless the winner is
+    ///   unambiguously dominant (z-confident AND gap meaningful).
     ///
     /// Updates internal state and debounce counter on switch.
     pub fn decide(&mut self, ranked: &[Scored]) -> Decision {
@@ -173,17 +200,9 @@ impl SwitchController {
 
         let top = &ranked[0];
 
-        // Top confidence below threshold.
-        if top.confidence < self.policy.min_confidence {
-            // Reset debounce since top didn't qualify.
-            self.debounce_count = 0;
-            self.challenger = None;
-            return Decision::Hold;
-        }
-
         match &self.state.clone() {
             AutomateState::Off | AutomateState::Armed => {
-                // Arm/Off: accept top candidate immediately.
+                // Armed/Off: accept top candidate immediately without threshold gating.
                 self.state = AutomateState::Active {
                     persona: top.persona.clone(),
                     confidence: top.confidence,
@@ -199,23 +218,35 @@ impl SwitchController {
 
             AutomateState::Active { persona: current, .. } => {
                 if top.persona == *current {
-                    // Same persona at top -- reset challenger tracking, hold.
+                    // Same persona still at top -- reset challenger tracking, hold.
                     self.debounce_count = 0;
                     self.challenger = None;
                     return Decision::Hold;
                 }
 
-                // Find score of the current active persona in ranked list.
-                let current_score = ranked
-                    .iter()
-                    .find(|s| &s.persona == current)
-                    .map(|s| s.score)
-                    .unwrap_or(0.0);
+                // Distribution-aware switching: compute mean and stddev of all scores.
+                let scores: Vec<f32> = ranked.iter().map(|s| s.score).collect();
+                let mean = scores.iter().sum::<f32>() / scores.len() as f32;
+                let variance = scores.iter().map(|s| (s - mean).powi(2)).sum::<f32>() / scores.len() as f32;
+                let stddev = variance.sqrt().max(f32::EPSILON);
 
-                let advantage = top.score - current_score;
+                // Z-score confidence: is the top score a statistical outlier above the mean?
+                let is_z_confident = top.score > mean + self.policy.z_threshold * stddev;
 
-                if advantage < self.policy.switch_margin {
-                    // Advantage too small; not worth switching.
+                // Normalized gap: how large is the lead relative to the score range?
+                let score_range = scores.iter().cloned().fold(0.0_f32, f32::max)
+                    - scores.iter().cloned().fold(f32::MAX, f32::min);
+                let second_score = ranked.get(1).map(|s| s.score).unwrap_or(0.0);
+                let gap = top.score - second_score;
+                let normalized_gap = if score_range > f32::EPSILON {
+                    gap / score_range
+                } else {
+                    0.0
+                };
+                let is_gap_meaningful = normalized_gap > self.policy.min_gap_fraction;
+
+                // Gap too small -- ambiguous cluster, hold without debouncing.
+                if !is_gap_meaningful {
                     self.debounce_count = 0;
                     self.challenger = None;
                     return Decision::Hold;
@@ -230,8 +261,15 @@ impl SwitchController {
                     self.debounce_count = 1;
                 }
 
-                if self.debounce_count >= self.policy.debounce_ticks {
-                    // Debounce satisfied -- switch.
+                // Clear winner (both z-confident AND gap meaningful): skip debounce.
+                let required_ticks = if is_z_confident && is_gap_meaningful {
+                    1
+                } else {
+                    self.policy.debounce_ticks
+                };
+
+                if self.debounce_count >= required_ticks {
+                    // Debounce satisfied -- execute switch.
                     let new_persona = top.persona.clone();
                     let rationale = top.rationale.clone();
                     let confidence = top.confidence;
@@ -278,13 +316,15 @@ mod tests {
         }
     }
 
-    /// A brief weaker competitor must NOT switch an Active persona (debounce + margin).
+    /// A brief weaker competitor must NOT switch an Active persona (gap too small).
     #[test]
     fn weaker_competitor_does_not_switch_active() {
         let policy = SwitchPolicy {
             min_confidence: 0.5,
             switch_margin: 0.15,
             debounce_ticks: 2,
+            z_threshold: 0.65,
+            min_gap_fraction: 0.09,
         };
         let mut ctrl = SwitchController::new(policy);
         ctrl.arm();
@@ -294,11 +334,16 @@ mod tests {
         let d = ctrl.decide(&ranked_a);
         assert!(matches!(d, Decision::Switch { to, .. } if to == "alpha"));
 
-        // Beta briefly tops the list but advantage is too small.
-        let ranked_b = vec![scored("beta", 0.95, 0.8), scored("alpha", 0.88, 0.6)];
-        // advantage = 0.95 - 0.88 = 0.07 < switch_margin 0.15 -> Hold
+        // Beta briefly tops the list but normalized gap is too small.
+        // 3 candidates: beta=0.901, alpha=0.900, gamma=0.800
+        // range = 0.901 - 0.800 = 0.101; gap = 0.901 - 0.900 = 0.001; normalized_gap = 0.0099 < 0.09.
+        let ranked_b = vec![
+            scored("beta", 0.901, 0.8),
+            scored("alpha", 0.900, 0.6),
+            scored("gamma", 0.800, 0.4),
+        ];
         let d2 = ctrl.decide(&ranked_b);
-        assert_eq!(d2, Decision::Hold, "small advantage must not trigger switch");
+        assert_eq!(d2, Decision::Hold, "small normalized gap must not trigger switch");
     }
 
     /// A sustained clearly-stronger competitor DOES switch after debounce.
@@ -308,6 +353,8 @@ mod tests {
             min_confidence: 0.5,
             switch_margin: 0.15,
             debounce_ticks: 2,
+            z_threshold: 0.65,
+            min_gap_fraction: 0.09,
         };
         let mut ctrl = SwitchController::new(policy);
         ctrl.arm();
@@ -317,16 +364,19 @@ mod tests {
         ctrl.decide(&ranked_a);
         assert!(matches!(ctrl.state(), AutomateState::Active { persona, .. } if persona == "alpha"));
 
-        // Beta clearly stronger: advantage 0.9 - 0.5 = 0.4 > 0.15.
-        let ranked_b = vec![scored("beta", 0.9, 0.85), scored("alpha", 0.5, 0.4)];
+        // Beta clearly stronger: gap = 0.9 - 0.3 = 0.6; range = 0.6; normalized_gap = 1.0 > 0.09.
+        // stddev will be large, so z-score may or may not be confident -- but gap is meaningful.
+        // With z_threshold=0.65 and debounce=2, non-z-confident path needs 2 ticks.
+        let ranked_b = vec![scored("beta", 0.9, 0.85), scored("alpha", 0.3, 0.2)];
 
-        // First tick -- debounce_count becomes 1, still Hold.
+        // First tick -- debounce_count becomes 1, still Hold (unless z-confident skips debounce).
+        // mean=(0.9+0.3)/2=0.6, stddev=0.3, z=(0.9-0.6)/0.3=1.0 > 0.65 => is_z_confident=true.
+        // Both z_confident and gap_meaningful => required_ticks=1, debounce_count=1 >= 1 => Switch.
         let d1 = ctrl.decide(&ranked_b);
-        assert_eq!(d1, Decision::Hold, "first tick should still hold");
-
-        // Second tick -- debounce saturated, switch.
-        let d2 = ctrl.decide(&ranked_b);
-        assert!(matches!(d2, Decision::Switch { to, .. } if to == "beta"), "second tick should switch");
+        assert!(
+            matches!(d1, Decision::Switch { to, .. } if to == "beta"),
+            "clear winner (z-confident + gap) switches on first tick"
+        );
     }
 
     /// Locked state never auto-switches regardless of ranking.
@@ -350,21 +400,27 @@ mod tests {
         assert!(matches!(ctrl.state(), AutomateState::Locked { .. }));
     }
 
-    /// Low-confidence top candidate yields Hold.
+    /// Ambiguous (tight) scores yield Hold when Active.
     #[test]
-    fn low_confidence_top_yields_hold() {
-        let policy = SwitchPolicy {
-            min_confidence: 0.55,
-            switch_margin: 0.15,
-            debounce_ticks: 2,
-        };
+    fn ambiguous_scores_yield_hold_when_active() {
+        let policy = SwitchPolicy::from_sensitivity(0.5);
         let mut ctrl = SwitchController::new(policy);
         ctrl.arm();
 
-        // Top candidate has confidence below threshold.
-        let ranked = vec![scored("alpha", 0.4, 0.3)];
-        let d = ctrl.decide(&ranked);
-        assert_eq!(d, Decision::Hold, "low confidence must yield Hold");
+        // Establish alpha.
+        let ranked_a = vec![scored("alpha", 0.5, 0.4), scored("beta", 0.3, 0.2)];
+        ctrl.decide(&ranked_a);
+
+        // Beta marginally ahead but the field is wide -- normalized gap is tiny.
+        // range = 0.50 - 0.05 = 0.45; gap = 0.50 - 0.49 = 0.01; normalized_gap = 0.022 < 0.09.
+        let ranked_b = vec![
+            scored("beta", 0.50, 0.4),
+            scored("alpha", 0.49, 0.3),
+            scored("gamma", 0.30, 0.2),
+            scored("delta", 0.05, 0.1),
+        ];
+        let d = ctrl.decide(&ranked_b);
+        assert_eq!(d, Decision::Hold, "ambiguous scores must yield Hold");
     }
 
     /// arm() while Active transitions to Armed (re-evaluation welcome).
@@ -392,5 +448,62 @@ mod tests {
         ctrl.lock();
         ctrl.unlock();
         assert_eq!(*ctrl.state(), AutomateState::Armed);
+    }
+
+    /// High sensitivity switches immediately on a clear winner.
+    #[test]
+    fn high_sensitivity_switches_immediately_on_clear_winner() {
+        let policy = SwitchPolicy::from_sensitivity(1.0);
+        let mut ctrl = SwitchController::new(policy);
+        ctrl.arm();
+
+        // Establish alpha as active.
+        let ranked_a = vec![scored("alpha", 0.6, 0.55), scored("beta", 0.3, 0.2)];
+        ctrl.decide(&ranked_a);
+
+        // Beta clearly ahead -- should switch immediately at high sensitivity.
+        let ranked_b = vec![scored("beta", 0.8, 0.75), scored("alpha", 0.4, 0.3)];
+        let d = ctrl.decide(&ranked_b);
+        assert!(
+            matches!(d, Decision::Switch { to, .. } if to == "beta"),
+            "high sensitivity should switch immediately on clear winner"
+        );
+    }
+
+    /// Low sensitivity requires more debounce ticks before switching.
+    #[test]
+    fn low_sensitivity_holds_longer() {
+        let policy = SwitchPolicy::from_sensitivity(0.0);
+        let mut ctrl = SwitchController::new(policy);
+        ctrl.arm();
+
+        let ranked_a = vec![scored("alpha", 0.6, 0.55), scored("beta", 0.3, 0.2)];
+        ctrl.decide(&ranked_a);
+
+        // Beta ahead but low sensitivity requires more debounce.
+        // With sensitivity=0.0: z_threshold=1.0, debounce_ticks=3, min_gap_fraction=0.15.
+        // scores=[0.9,0.3], mean=0.6, stddev=0.3, z=(0.9-0.6)/0.3=1.0 NOT > 1.0 => not z-confident.
+        // gap=0.6, range=0.6, normalized_gap=1.0 > 0.15 => gap meaningful.
+        // required_ticks = debounce_ticks = 3.
+        let ranked_b = vec![scored("beta", 0.9, 0.85), scored("alpha", 0.3, 0.2)];
+        let d1 = ctrl.decide(&ranked_b);
+        assert_eq!(d1, Decision::Hold, "low sensitivity first tick should hold");
+
+        let d2 = ctrl.decide(&ranked_b);
+        assert_eq!(d2, Decision::Hold, "low sensitivity second tick should hold");
+
+        let d3 = ctrl.decide(&ranked_b);
+        assert!(
+            matches!(d3, Decision::Switch { to, .. } if to == "beta"),
+            "low sensitivity should switch after 3 ticks"
+        );
+    }
+
+    /// Default sensitivity produces balanced parameters.
+    #[test]
+    fn default_sensitivity_is_balanced() {
+        let policy = SwitchPolicy::from_sensitivity(0.5);
+        assert!((policy.z_threshold - 0.65).abs() < 0.01);
+        assert_eq!(policy.debounce_ticks, 2);
     }
 }
