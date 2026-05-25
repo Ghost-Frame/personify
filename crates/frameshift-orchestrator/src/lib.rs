@@ -33,7 +33,7 @@ pub use index::{PersonaIndex, PersonaProfile};
 pub use intent::{classify as classify_intent, Intent};
 pub use mode::{Mode, ModeState};
 pub use policy::{rank, PolicyWeights, ScoreComponents, Scored};
-pub use run::{select, SelectionInputs};
+pub use run::{select, select_rich, CandidateOutput, ContextSnapshot, SelectionInputs, SelectionOutput};
 
 /// Facade that wires together the index, weights, policy, preferences, and controller.
 ///
