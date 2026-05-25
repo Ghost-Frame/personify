@@ -724,6 +724,8 @@ mod tests {
             required_tools: vec![],
             filesystem_scope: "/".to_string(),
             network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         });
 
         let warnings = validate_content(&src);
@@ -744,6 +746,8 @@ mod tests {
             required_tools: vec![],
             filesystem_scope: "/**".to_string(),
             network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         });
 
         let warnings = validate_content(&src);
@@ -763,6 +767,8 @@ mod tests {
             required_tools: vec![],
             filesystem_scope: "./src/**".to_string(),
             network_egress: true,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         });
 
         let warnings = validate_content(&src);
@@ -920,6 +926,8 @@ mod tests {
             required_tools: vec!["bash".to_string(), "read_file".to_string()],
             filesystem_scope: "./src/**".to_string(),
             network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         });
 
         let warnings = validate_content(&src);

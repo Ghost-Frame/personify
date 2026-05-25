@@ -21,7 +21,11 @@ pub struct AutomateArgs {
 #[derive(Debug, Subcommand)]
 pub enum AutomateAction {
     /// Enable automate mode for this project (does NOT auto-select a persona).
-    On,
+    On {
+        /// Switching sensitivity from 0.0 (stable) to 1.0 (responsive). Default: 0.5.
+        #[arg(long, value_name = "VALUE")]
+        sensitivity: Option<f32>,
+    },
     /// Disable automate mode for this project.
     Off,
     /// Print the current mode, active persona, and recent audit transitions.
@@ -44,16 +48,22 @@ pub fn run_automate(client: &Client, args: AutomateArgs) -> Result<(), CliError>
     let audit_path = state_dir.join("automate-audit.jsonl");
 
     match args.action {
-        AutomateAction::On => {
-            let state = ModeState { mode: Mode::On };
+        AutomateAction::On { sensitivity } => {
+            let state = ModeState {
+                mode: Mode::On,
+                sensitivity: sensitivity.unwrap_or(0.5),
+            };
             state
                 .save(&mode_path)
                 .map_err(|e| CliError::Orchestrator(e.to_string()))?;
-            println!("automate mode: on");
+            println!("automate mode: on (sensitivity: {:.1})", state.sensitivity);
         }
 
         AutomateAction::Off => {
-            let state = ModeState { mode: Mode::Off };
+            let state = ModeState {
+                mode: Mode::Off,
+                sensitivity: 0.5,
+            };
             state
                 .save(&mode_path)
                 .map_err(|e| CliError::Orchestrator(e.to_string()))?;
@@ -88,6 +98,7 @@ pub fn run_automate(client: &Client, args: AutomateArgs) -> Result<(), CliError>
                 },
                 if locked { "  [locked]" } else { "" }
             );
+            println!("sensitivity: {:.1}", mode_state.sensitivity);
             println!("active persona: {}", active);
 
             // Print last 5 audit transitions.

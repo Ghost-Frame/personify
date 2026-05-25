@@ -10,7 +10,7 @@ use std::path::Path;
 use frameshift_client::Client;
 use frameshift_orchestrator::{
     audit::{now_timestamp, AuditLog, Transition},
-    controller::{Decision, SwitchController},
+    controller::{Decision, SwitchController, SwitchPolicy},
     feedback::Preferences,
     mode::{Mode, ModeState},
     policy::PolicyWeights,
@@ -55,6 +55,10 @@ pub fn evaluate_and_apply(client: &Client, controller: &mut SwitchController, pr
         // Automate mode is off; nothing to do.
         return;
     }
+
+    // Update the switching policy from persisted sensitivity.
+    let policy = SwitchPolicy::from_sensitivity(mode_state.sensitivity);
+    controller.set_policy(policy);
 
     // Step 2: check lock marker.
     if lock_path.exists() {
@@ -187,7 +191,7 @@ mod tests {
         // Enable mode.
         let state_dir = client.orchestrator_state_dir(&project_root).unwrap();
         fs::create_dir_all(&state_dir).unwrap();
-        let mode = ModeState { mode: Mode::On };
+        let mode = ModeState { mode: Mode::On, sensitivity: 0.5 };
         mode.save(&state_dir.join("automate.json")).unwrap();
 
         // Write lock marker.
@@ -220,7 +224,7 @@ mod tests {
         // Enable mode, no lock.
         let state_dir = client.orchestrator_state_dir(&project_root).unwrap();
         fs::create_dir_all(&state_dir).unwrap();
-        let mode = ModeState { mode: Mode::On };
+        let mode = ModeState { mode: Mode::On, sensitivity: 0.5 };
         mode.save(&state_dir.join("automate.json")).unwrap();
 
         let policy = SwitchPolicy::default();
@@ -264,7 +268,7 @@ mod tests {
 
         // Enable mode.
         let state_dir = client.orchestrator_state_dir(&project_root).unwrap();
-        let mode = ModeState { mode: Mode::On };
+        let mode = ModeState { mode: Mode::On, sensitivity: 0.5 };
         mode.save(&state_dir.join("automate.json")).unwrap();
 
         // Use a lenient policy so the single persona will pass the confidence threshold.
@@ -272,6 +276,8 @@ mod tests {
             min_confidence: 0.0,
             switch_margin: 0.0,
             debounce_ticks: 1,
+            z_threshold: 0.0,
+            min_gap_fraction: 0.0,
         };
         let mut controller = SwitchController::new(policy);
         controller.arm();
@@ -332,7 +338,7 @@ mod tests {
 
         // Enable mode.
         let state_dir = client.orchestrator_state_dir(&project_root).unwrap();
-        let mode = ModeState { mode: Mode::On };
+        let mode = ModeState { mode: Mode::On, sensitivity: 0.5 };
         mode.save(&state_dir.join("automate.json")).unwrap();
 
         // Lenient policy so the single installed persona crosses the
@@ -341,6 +347,8 @@ mod tests {
             min_confidence: 0.0,
             switch_margin: 0.0,
             debounce_ticks: 1,
+            z_threshold: 0.0,
+            min_gap_fraction: 0.0,
         };
         let mut controller = SwitchController::new(policy);
         controller.arm();

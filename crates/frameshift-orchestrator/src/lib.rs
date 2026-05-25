@@ -18,6 +18,7 @@ pub mod controller;
 pub mod error;
 pub mod feedback;
 pub mod index;
+pub mod intent;
 pub mod mode;
 pub mod policy;
 pub mod run;
@@ -29,9 +30,10 @@ pub use controller::{AutomateState, Decision, SwitchController, SwitchPolicy};
 pub use error::OrchestratorError;
 pub use feedback::Preferences;
 pub use index::{PersonaIndex, PersonaProfile};
+pub use intent::{classify as classify_intent, Intent};
 pub use mode::{Mode, ModeState};
 pub use policy::{rank, PolicyWeights, ScoreComponents, Scored};
-pub use run::{select, SelectionInputs};
+pub use run::{select, select_rich, CandidateOutput, ContextSnapshot, SelectionInputs, SelectionOutput};
 
 /// Facade that wires together the index, weights, policy, preferences, and controller.
 ///
@@ -93,6 +95,8 @@ mod tests {
             keywords: languages.iter().map(|l| l.to_string()).collect(),
             required_tools: vec![],
             network_egress: false,
+            primary_intents: vec![],
+            anti_keywords: vec![],
         }
     }
 
@@ -127,6 +131,7 @@ mod tests {
             },
             frameworks: vec![],
             task_tokens: vec![],
+            inferred_intent: None,
         };
         // With only one persona and confidence depends on scoring; just verify no panic.
         let _decision = orch.decide(&ctx);

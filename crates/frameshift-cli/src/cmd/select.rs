@@ -26,13 +26,24 @@ pub struct SelectArgs {
     /// library without first installing anything.
     #[arg(long, value_name = "DIR")]
     pub library: Option<PathBuf>,
+
+    /// Output format: "table" (default) or "json".
+    ///
+    /// When "json", emits the full `SelectionOutput` as structured JSON for
+    /// host-LLM reranking or programmatic consumption.
+    #[arg(long, value_name = "FORMAT", default_value = "table")]
+    pub format: String,
 }
 
 /// Execute the `select` subcommand.
 ///
 /// Builds `SelectionInputs` from the current working directory and the loaded
-/// preferences, calls `orchestrator::select`, and prints the top 5 results in
-/// `persona  score  confidence  rationale` format.
+/// preferences, then emits results in the requested format.
+///
+/// - `--format table` (default): prints the top 5 results in
+///   `persona  score  confidence  rationale` format.
+/// - `--format json`: emits the full `SelectionOutput` as pretty-printed JSON
+///   suitable for host-LLM reranking or programmatic consumption.
 ///
 /// When `--library` is given, the index is built from the given catalog root
 /// instead of the project-installed personas.
@@ -61,6 +72,16 @@ pub fn run_select(client: &Client, args: SelectArgs) -> Result<(), CliError> {
         weights: PolicyWeights::default(),
     };
 
+    if args.format == "json" {
+        // Emit the full SelectionOutput as structured JSON.
+        let output = frameshift_orchestrator::select_rich(&inputs)
+            .map_err(|e| CliError::Orchestrator(e.to_string()))?;
+        let json = serde_json::to_string_pretty(&output)?;
+        println!("{}", json);
+        return Ok(());
+    }
+
+    // Default: table format using the ranked candidate list.
     let ranked = frameshift_orchestrator::select(&inputs)
         .map_err(|e| CliError::Orchestrator(e.to_string()))?;
 
